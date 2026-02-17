@@ -1,6 +1,6 @@
 # py-ham-bbs
 
-[![Python](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org/downloads) [![CI](https://github.com/JezzComputers/py-ham-bbs/actions/workflows/python-tests.yml/badge.svg)](https://github.com/JezzComputers/py-ham-bbs/actions/workflows/python-tests.yml)
+[![Python](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org/downloads) [![Wiki Docs](https://img.shields.io/badge/wiki-docs-4a7ebb?logo=wikipedia&logoColor=white&style=flat)](https://github.com/jezza5400-org/py-ham-bbs/wiki) [![CI](https://github.com/JezzComputers/py-ham-bbs/actions/workflows/python-tests.yml/badge.svg)](https://github.com/JezzComputers/py-ham-bbs/actions/workflows/python-tests.yml)
 
 Tools and configuration files for building a lightweight ham radio packet BBS made with Python using software TNCs and AX.25
 
