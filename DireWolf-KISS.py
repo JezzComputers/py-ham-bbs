@@ -1,6 +1,7 @@
 import socket
 import threading
 import sys
+import binascii
 
 KISS_HOST = "127.0.0.1"
 KISS_PORT = 8001
@@ -23,6 +24,21 @@ def ax25_call(callsign, ssid=0, last=False):
     return encoded
 
 # -------------------------
+#  CRC-16-CCITT (AX.25 FCS)
+# -------------------------
+def ax25_fcs(data):
+    crc = 0xFFFF
+    for b in data:
+        crc ^= b
+        for _ in range(8):
+            if crc & 1:
+                crc = (crc >> 1) ^ 0x8408
+            else:
+                crc >>= 1
+    crc ^= 0xFFFF
+    return crc.to_bytes(2, "little")
+
+# -------------------------
 #  SEND AX.25 FRAME
 # -------------------------
 def send_frame(text: str):
@@ -34,7 +50,14 @@ def send_frame(text: str):
     CONTROL = b"\x03"
     PID     = b"\xF0"
 
+    # Build AX.25 frame (no bit-stuffing; Direwolf handles that)
     frame = DEST + SRC + CONTROL + PID + payload
+
+    # Add CRC/FCS
+    fcs = ax25_fcs(frame)
+    frame += fcs
+
+    # Wrap in KISS
     kiss_frame = b"\xC0\x00" + frame + b"\xC0"
 
     try:
