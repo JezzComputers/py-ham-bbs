@@ -96,6 +96,49 @@ def send_frame(text: str):
     print("[PTT] OFF")
 
 # ----------------------------------------------------
+#  AX.25 FRAME DECODER (UI frames only)
+# ----------------------------------------------------
+def decode_ax25(frame: bytes):
+    """
+    Decode a basic AX.25 UI frame:
+    DEST(7) + SRC(7) + CONTROL + PID + PAYLOAD + FCS(2)
+    """
+    try:
+        if len(frame) < 20:
+            return None, None, None
+
+        # Remove KISS framing if present
+        if frame[0] == 0xC0:
+            frame = frame[2:-1]   # strip C0 00 ... C0
+
+        # Extract fields
+        dest_raw = frame[0:7]
+        src_raw  = frame[7:14]
+        control  = frame[14]
+        pid      = frame[15]
+        payload  = frame[16:-2]   # exclude FCS
+
+        # Decode callsigns
+        def decode_call(raw):
+            call = "".join(chr(b >> 1) for b in raw[:6]).strip()
+            ssid = (raw[6] >> 1) & 0x0F
+            return f"{call}-{ssid}"
+
+        dest = decode_call(dest_raw)
+        src  = decode_call(src_raw)
+
+        # Decode payload as text
+        try:
+            text = payload.decode("utf-8", errors="replace")
+        except:
+            text = "<non-text payload>"
+
+        return dest, src, text
+
+    except Exception as e:
+        return None, None, None
+
+# ----------------------------------------------------
 #  LISTENER THREAD
 # ----------------------------------------------------
 def listener():
@@ -105,7 +148,18 @@ def listener():
             if not data:
                 print("RX socket closed")
                 break
-            print(f"\n[RX] {data.hex()}\n>>> ", end="", flush=True)
+
+            # Print raw hex
+            print(f"\n[RX RAW] {data.hex()}")
+
+            # Try to decode AX.25
+            dest, src, text = decode_ax25(data)
+
+            if dest is not None:
+                print(f"[DECODED] {src} → {dest} : {text}")
+
+            print(">>> ", end="", flush=True)
+
         except Exception as e:
             print("RX error:", e)
             break
