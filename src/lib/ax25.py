@@ -12,9 +12,38 @@ def kiss_escape(data: bytes) -> bytes:
 
 
 def kiss_unescape(data: bytes) -> bytes:
-    return data.replace(b"\xdb\xdd", b"\xdb").replace(b"\xdb\xdc", b"\xc0")
+    out = bytearray()
+    i = 0
+    length = len(data)
+    while i < length:
+        byte = data[i]
+        if byte != 0xDB:
+            out.append(byte)
+            i += 1
+            continue
 
+        # Saw FESC (0xDB). Try to interpret an escape sequence.
+        if i + 1 >= length:
+            # Dangling FESC at end: treat as literal 0xDB.
+            out.append(0xDB)
+            i += 1
+            continue
 
+        next_byte = data[i + 1]
+        if next_byte == 0xDC:
+            # FESC TFEND -> FEND (0xC0)
+            out.append(0xC0)
+            i += 2
+        elif next_byte == 0xDD:
+            # FESC TFESC -> FESC (0xDB)
+            out.append(0xDB)
+            i += 2
+        else:
+            # Non-standard sequence: keep literal 0xDB and process next normally.
+            out.append(0xDB)
+            i += 1
+
+    return bytes(out)
 def parse_ax25_addresses(frame: bytes) -> tuple[list[bytes], int]:
     addresses: list[bytes] = []
     idx = 0
