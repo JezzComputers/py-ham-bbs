@@ -1,10 +1,22 @@
+---
 name: CI
+run-name: Python ${{ github.ref }} Tests
+
+defaults:
+  run:
+    shell: bash
 
 on:
   push:
     branches: [main]
+    paths:
+      - "src/**"
+      - ".github/workflows/python-tests.yml"
   pull_request:
     branches: [main]
+    paths:
+      - "src/**"
+      - ".github/workflows/python-tests.yml"
 
 permissions:
   contents: read
@@ -20,7 +32,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        python-version: ["3.13.11", "3.14.2"]
+        python-version: ["3.13.12", "3.14.3"]
 
     steps:
       - uses: actions/checkout@v6
@@ -47,18 +59,11 @@ jobs:
 
       - name: Sync dependencies
         run: |
-          if [ -f uv.lock ]; then
-            echo "Lockfile found, using locked sync"
-            uv sync --locked --all-groups || {
-              echo "Locked sync failed, falling back to pyproject"
-              uv sync --all-groups
-            }
-          else
-            echo "No lockfile found, syncing from pyproject"
-            uv sync --all-groups
-          fi
+          uv sync --all-groups
+
+      - name: Run ruff
+        run: ruff check .
 
       - name: Run tests
         run: |
           uv run pytest
-          uv run python src/main.py
