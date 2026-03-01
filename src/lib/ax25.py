@@ -12,7 +12,7 @@ def kiss_escape(data: bytes) -> bytes:
 
 
 def kiss_unescape(data: bytes) -> bytes:
-    return data.replace(b"\xdb\xdc", b"\xc0").replace(b"\xdb\xdd", b"\xdb")
+    return data.replace(b"\xdb\xdd", b"\xdb").replace(b"\xdb\xdc", b"\xc0")
 
 
 def parse_ax25_addresses(frame: bytes) -> tuple[list[bytes], int]:
@@ -103,7 +103,7 @@ class AX25FrameBuilder:
             src_raw = addresses[1]
             if len(frame) < idx + 4:
                 return None, None, None
-            payload = frame[idx + 2 : -2]
+            payload = frame[idx + 2 :]
 
             dest = decode_call(dest_raw)
             src = decode_call(src_raw)
