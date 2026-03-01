@@ -1,4 +1,4 @@
-from lib.ax25 import kiss_unescape, ax25_call, AX25Config, AX25FrameBuilder
+from lib.ax25 import kiss_unescape, AX25Config, AX25FrameBuilder
 
 
 def test_kiss_unescape_escaped_fend() -> None:
