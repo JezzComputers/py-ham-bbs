@@ -101,7 +101,8 @@ class AX25FrameBuilder:
                 return None, None, None
             dest_raw = addresses[0]
             src_raw = addresses[1]
-            if len(frame) < idx + 4:
+            # Require at least CONTROL and PID bytes after the addresses.
+            if len(frame) < idx + 2:
                 return None, None, None
             payload = frame[idx + 2 :]
 
