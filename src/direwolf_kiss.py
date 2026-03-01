@@ -2,12 +2,10 @@ import os
 import sys
 import socket
 import threading
-import sys as _sys
 import time
 
 
-# Ensure `src` is on sys.path so `lib` package imports work when running
-# this script directly from the repository root.
+# Ensure `src` is on sys.path so `lib` package imports work
 sys.path.insert(0, os.path.dirname(__file__))
 
 from lib.terminal import (
@@ -37,12 +35,10 @@ USE_DUMMY_RIG = False
 # Extra PTT hold time (seconds) to keep PTT asserted after estimated TX time.
 PTT_EXTRA_HOLD = 0
 
-# FX.25 usage: set this to True if you're transmitting with FX.25 (Direwolf FEC).
-# We avoid reading direwolf.conf here; this flag is explicit and simple.
+# FX.25 usage: set this to True if transmitting with FX.25 (Direwolf FEC).
 FX25_ENABLED = True
 
-# TX time multiplier: can be overridden with env `TX_TIME_MULTIPLIER`.
-# If not set, use 1.5 when FX25 is enabled, otherwise 1.0.
+# TX time multiplier to add margin fot FX.25 frames.
 TX_TIME_MULTIPLIER = 3 if FX25_ENABLED else 1.0
 
 
@@ -159,7 +155,7 @@ def main() -> None:
         rx_socket = kiss_connect()
     except Exception as e:
         print(f"{MAGENTA}KISS connect failed:{RESET} {e}")
-        _sys.exit(1)
+        sys.exit(1)
 
     rig = DummyRig() if USE_DUMMY_RIG else rigctl_connect()
 
@@ -179,7 +175,7 @@ def main() -> None:
                 send_frame(tx_socket, rig, msg, builder)
         except KeyboardInterrupt:
             print("\nExiting.")
-            _sys.exit(0)
+            sys.exit(0)
 
 
 if __name__ == "__main__":
