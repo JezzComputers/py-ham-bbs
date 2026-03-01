@@ -62,7 +62,7 @@ jobs:
           uv sync --all-groups
 
       - name: Run ruff
-        run: ruff check .
+        run: uv run ruff check .
 
       - name: Run tests
         run: |
