@@ -66,6 +66,11 @@ def decode_call(raw: bytes) -> str:
     return f"{call}-{ssid}"
 
 
+# AX.25 UI frame control and PID constants (no layer 3 protocol)
+AX25_CONTROL_UI_FRAME: bytes = b"\x03"
+AX25_PID_NO_LAYER_3: bytes = b"\xf0"
+
+
 class AX25Config:
     def __init__(self, dest_call: str, dest_ssid: int, src_call: str, src_ssid: int) -> None:
         self.dest_call: str = dest_call
@@ -92,9 +97,13 @@ class AX25FrameBuilder:
         self.config: AX25Config = config
 
     def build_ax25_frame(self, payload: bytes) -> bytes:
-        CONTROL = b"\x03"
-        PID = b"\xf0"
-        return self.config.dest_frame + self.config.src_frame + CONTROL + PID + payload
+        return (
+            self.config.dest_frame
+            + self.config.src_frame
+            + AX25_CONTROL_UI_FRAME
+            + AX25_PID_NO_LAYER_3
+            + payload
+        )
 
     def build_kiss_frame(self, ax25_frame: bytes) -> bytes:
         """Build a KISS-framed byte sequence for the given AX.25 frame.
