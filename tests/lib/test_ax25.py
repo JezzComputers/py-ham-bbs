@@ -27,6 +27,8 @@ def test_kiss_unescape_chained_escaped_fesc_followed_by_literal_dc() -> None:
     # decode to FESC (\xdb) followed by 0xDC, not misinterpreting the trailing 0xDC
     # as part of an FESC+TFEND escape sequence.
     assert kiss_unescape(b"\xdb\xdd\xdc") == b"\xdb\xdc"
+
+
 def test_decode_full_payload_not_truncated() -> None:
     # Build a KISS frame and verify that decode returns the full payload without
     # stripping the last 2 bytes (which were incorrectly assumed to be FCS).
