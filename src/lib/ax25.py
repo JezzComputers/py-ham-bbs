@@ -105,24 +105,40 @@ class AX25FrameBuilder:
         """
         return b"\xc0\x00" + kiss_escape(ax25_frame) + b"\xc0"
 
-    def estimate_tx_time(self, ax25_frame: bytes) -> float:
+    def estimate_tx_time(self, ax25_frame: bytes, baud: int = 1200, overhead: float = 0.25) -> float:
+        """Estimate transmit time for an AX.25 frame.
+
+        Parameters:
+        - ax25_frame: raw AX.25 frame bytes (does not include KISS framing)
+        - baud: nominal bit rate (default 1200)
+        - overhead: additional seconds to add for PTT/keying/etc.
+        """
         bits = (len(ax25_frame) + 2) * 8
-        return bits / 1200.0 + 0.25
+        return bits / float(baud) + float(overhead)
 
     def decode(self, frame: bytes):
         try:
-            if len(frame) < 20:
+            if not frame:
                 return None, None, None
 
-            # Remove KISS framing and unescape
-            if frame and frame[0] == 0xC0:
-                while frame and frame[0] == 0xC0:
-                    frame = frame[1:]
-                while frame and frame[-1] == 0xC0:
-                    frame = frame[:-1]
-                if frame and frame[0] == 0x00:
-                    frame = frame[1:]
-                frame = kiss_unescape(frame)
+            # If KISS framing (FEND 0xC0) is present, extract the first
+            # non-empty chunk between FEND bytes. This handles multiple
+            # concatenated frames more robustly than stripping all FENDs.
+            if 0xC0 in frame:
+                chunks = frame.split(b"\xC0")
+                # Pick the first non-empty chunk (if any)
+                frame = next((c for c in chunks if c), b"")
+
+            # Remove optional KISS command byte (0x00) if present
+            if frame and frame[0] == 0x00:
+                frame = frame[1:]
+
+            # Unescape KISS special sequences
+            frame = kiss_unescape(frame)
+
+            # Minimal AX.25 length: two 7-byte addresses + CONTROL + PID = 16
+            if len(frame) < 16:
+                return None, None, None
 
             try:
                 addresses, idx = parse_ax25_addresses(frame)

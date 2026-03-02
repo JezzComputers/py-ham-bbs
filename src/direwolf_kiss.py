@@ -37,7 +37,7 @@ def send_frame(tx_socket: socket.socket, text: str, builder: AX25FrameBuilder) -
     frame = builder.build_ax25_frame(payload)
     kiss_frame = builder.build_kiss_frame(frame)
 
-    tx_socket.send(kiss_frame)
+    tx_socket.sendall(kiss_frame)
     print(f"{GREEN}[TX]{RESET} {text}")
 
 
