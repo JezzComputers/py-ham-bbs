@@ -113,7 +113,7 @@ class AX25FrameBuilder:
         - baud: nominal bit rate (default 1200)
         - overhead: additional seconds to add for PTT/keying/etc.
         """
-        bits: int = (len(ax25_frame) + 2) * 8
+        bits: int = (len(ax25_frame) + 2) * 8  # +2 for on-air 2-byte FCS appended by TNC
         return bits / float(baud) + float(overhead)
 
     def decode(self, frame: bytes) -> tuple[str | None, str | None, str | None]:
