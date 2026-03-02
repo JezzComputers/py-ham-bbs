@@ -116,7 +116,7 @@ class AX25FrameBuilder:
         bits: int = (len(ax25_frame) + 2) * 8
         return bits / float(baud) + float(overhead)
 
-    def decode(self, frame: bytes) -> tuple[None, None, None] | tuple[str, str, str]:
+    def decode(self, frame: bytes) -> tuple[str | None, str | None, str | None]:
         try:
             if not frame:
                 return None, None, None
