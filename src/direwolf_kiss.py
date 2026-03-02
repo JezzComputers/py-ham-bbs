@@ -1,11 +1,11 @@
-import os
-import sys
-import socket
+from pathlib import Path
 import threading
+import socket
+import sys
 
 
 # Ensure `src` is on sys.path so `lib` package imports work
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, str(Path(__file__).parent))
 
 from lib.terminal import (
     use_color,
