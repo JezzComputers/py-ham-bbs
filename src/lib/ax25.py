@@ -1,5 +1,5 @@
 def ax25_call(callsign: str, ssid: int = 0, last: bool = False) -> bytes:
-    callsign = callsign.upper().ljust(6)
+    callsign = callsign.upper()[:6].ljust(6)
     encoded = bytes([(ord(c) << 1) & 0xFE for c in callsign])
     ssid_byte: int = 0x60 | ((ssid & 0x0F) << 1)
     if last:
