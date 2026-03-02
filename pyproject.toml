@@ -19,4 +19,4 @@ pythonpath = ["src"]
 # Install with uv sync --group <name> <optional package>
 # Or uv sync --dev <optional package>
 [dependency-groups]
-dev = ["pytest", "ruff"]
+dev = ["pyright", "pytest", "ruff"]

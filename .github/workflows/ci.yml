@@ -58,12 +58,13 @@ jobs:
             venv-${{ runner.os }}-${{ matrix.python-version }}-
 
       - name: Sync dependencies
-        run: |
-          uv sync --all-groups
-
-      - name: Run ruff
-        run: uv run ruff check .
+        run: uv sync --all-groups
 
       - name: Run tests
-        run: |
-          uv run pytest
+        run: uv run pytest
+
+      - name: Run pyright
+        run: uv run pyright
+
+      - name: Run ruff
+        run: uv run ruff check

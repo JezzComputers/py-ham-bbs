@@ -51,9 +51,11 @@ def listener(rx_socket: socket.socket, builder: AX25FrameBuilder) -> None:
 
             print(f"\n{CYAN}[RX RAW]{RESET} {data.hex()}")
 
-            dest, src, text = builder.decode(data)
-
-            if dest is not None:
+            res = builder.decode(data)
+            if res is None:
+                print(f"{MAGENTA}[DECODED]{RESET} <invalid frame>")
+            else:
+                dest, src, text = res
                 print(f"{BLUE}[DECODED]{RESET} {src} → {dest} : {text}")
 
             print(">>> ", end="", flush=True)

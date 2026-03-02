@@ -22,10 +22,9 @@ def test_kiss_unescape_mixed() -> None:
     assert result == b"\xc0" + b"abc" + b"\xdb"
 
 
-def test_kiss_unescape_chained_escaped_fesc_followed_by_literal_dc() -> None:
-    # Regression: escaped FESC (\xdb\xdd) followed by a literal 0xDC byte should
-    # decode to FESC (\xdb) followed by 0xDC, not misinterpreting the trailing 0xDC
-    # as part of an FESC+TFEND escape sequence.
+def test_kiss_unescape_escaped_fesc_then_literal_dc() -> None:
+    # Regression: escaped FESC (\xdb\xdd) followed by a literal 0xDC
+    # should decode to FESC (\xdb) then 0xDC.
     assert kiss_unescape(b"\xdb\xdd\xdc") == b"\xdb\xdc"
 
 
@@ -38,8 +37,12 @@ def test_decode_full_payload_not_truncated() -> None:
     ax25_frame = builder.build_ax25_frame(payload)
     kiss_frame = builder.build_kiss_frame(ax25_frame)
 
-    _dest, _src, text = builder.decode(kiss_frame)
+    res = builder.decode(kiss_frame)
+    assert res is not None
+    _dest, _src, text = res
 
+    assert _dest == "W1AW-0"
+    assert _src == "K9JRR-0"
     assert text == "Hello, World!"
 
 
@@ -51,6 +54,10 @@ def test_decode_short_payload_not_truncated() -> None:
     ax25_frame = builder.build_ax25_frame(payload)
     kiss_frame = builder.build_kiss_frame(ax25_frame)
 
-    _dest, _src, text = builder.decode(kiss_frame)
+    res = builder.decode(kiss_frame)
+    assert res is not None
+    _dest, _src, text = res
 
+    assert _dest == "W1AW-0"
+    assert _src == "K9JRR-0"
     assert text == "Hi"

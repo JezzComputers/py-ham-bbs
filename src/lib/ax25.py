@@ -1,5 +1,6 @@
 def ax25_call(callsign: str, ssid: int = 0, last: bool = False) -> bytes:
-    callsign = callsign.upper().ljust(6)
+    # Truncate to 6 chars then pad to ensure exactly 6-character callsign
+    callsign = callsign.upper()[:6].ljust(6)
     encoded = bytes([(ord(c) << 1) & 0xFE for c in callsign])
     ssid_byte: int = 0x60 | ((ssid & 0x0F) << 1)
     if last:
@@ -92,8 +93,9 @@ class AX25FrameBuilder:
         self.config: AX25Config = config
 
     def build_ax25_frame(self, payload: bytes) -> bytes:
-        CONTROL = b"\x03"
-        PID = b"\xf0"
+        CONTROL: bytes = b"\x03"
+        PID: bytes = b"\xf0"
+
         return self.config.dest_frame + self.config.src_frame + CONTROL + PID + payload
 
     def build_kiss_frame(self, ax25_frame: bytes) -> bytes:
@@ -105,21 +107,10 @@ class AX25FrameBuilder:
         """
         return b"\xc0\x00" + kiss_escape(ax25_frame) + b"\xc0"
 
-    def estimate_tx_time(self, ax25_frame: bytes, baud: int = 1200, overhead: float = 0.25) -> float:
-        """Estimate transmit time for an AX.25 frame.
-
-        Parameters:
-        - ax25_frame: raw AX.25 frame bytes (does not include KISS framing)
-        - baud: nominal bit rate (default 1200)
-        - overhead: additional seconds to add for PTT/keying/etc.
-        """
-        bits: int = (len(ax25_frame) + 2) * 8
-        return bits / float(baud) + float(overhead)
-
-    def decode(self, frame: bytes) -> tuple[None, None, None] | tuple[str, str, str]:
+    def decode(self, frame: bytes) -> tuple[str, str, str] | None:
         try:
             if not frame:
-                return None, None, None
+                return None
 
             # If KISS framing (FEND 0xC0) is present, extract the first
             # non-empty chunk between FEND bytes. This handles multiple
@@ -138,19 +129,19 @@ class AX25FrameBuilder:
 
             # Minimal AX.25 length: two 7-byte addresses + CONTROL + PID = 16
             if len(frame) < 16:
-                return None, None, None
+                return None
 
             try:
                 addresses, idx = parse_ax25_addresses(frame)
             except ValueError:
-                return None, None, None
+                return None
             if len(addresses) < 2:
-                return None, None, None
+                return None
             dest_raw: bytes = addresses[0]
             src_raw: bytes = addresses[1]
             # Require at least CONTROL and PID bytes after the addresses.
             if len(frame) < idx + 2:
-                return None, None, None
+                return None
             payload: bytes = frame[idx + 2 :]
 
             dest: str = decode_call(dest_raw)
@@ -163,4 +154,4 @@ class AX25FrameBuilder:
 
             return dest, src, text
         except Exception:
-            return None, None, None
+            return None
