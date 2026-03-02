@@ -39,10 +39,10 @@ def test_decode_full_payload_not_truncated() -> None:
 
     res = builder.decode(kiss_frame)
     assert res is not None
-    _dest, _src, text = res
+    dest, src, text = res
 
-    assert _dest == "W1AW-0"
-    assert _src == "K9JRR-0"
+    assert dest == "W1AW-0"
+    assert src == "K9JRR-0"
     assert text == "Hello, World!"
 
 
@@ -56,8 +56,8 @@ def test_decode_short_payload_not_truncated() -> None:
 
     res = builder.decode(kiss_frame)
     assert res is not None
-    _dest, _src, text = res
+    dest, src, text = res
 
-    assert _dest == "W1AW-0"
-    assert _src == "K9JRR-0"
+    assert dest == "W1AW-0"
+    assert src == "K9JRR-0"
     assert text == "Hi"
