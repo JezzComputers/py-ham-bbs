@@ -31,26 +31,8 @@ def kiss_connect(host: str = KISS_HOST, port: int = KISS_PORT) -> socket.socket:
     return s
 
 
-def decode_ax25(frame: bytes, builder: AX25FrameBuilder | None = None):
-    """Compatibility wrapper that decodes an AX.25/KISS frame.
-
-    If `builder` is provided, delegates to its `decode` method. Otherwise
-    uses a temporary builder to perform decoding.
-    """
-    if builder is not None:
-        return builder.decode(frame)
-
-    # Temporary builder; decoding doesn't depend on config, so use simple defaults
-    temp_cfg = AX25Config("APRS", 0, "N0CALL", 0)
-    return AX25FrameBuilder(temp_cfg).decode(frame)
-
-
 def send_frame(tx_socket: socket.socket, text: str, builder: AX25FrameBuilder) -> None:
-    """Build a KISS frame from `text` and send it to Direwolf.
-
-    Direwolf handles PTT internally via its PTT configuration, so no
-    PTT control is needed here.
-    """
+    """Build a KISS frame from `text` and send it to Direwolf."""
     payload = text.encode("utf-8")
     frame = builder.build_ax25_frame(payload)
     kiss_frame = builder.build_kiss_frame(frame)
@@ -69,7 +51,7 @@ def listener(rx_socket: socket.socket, builder: AX25FrameBuilder) -> None:
 
             print(f"\n{CYAN}[RX RAW]{RESET} {data.hex()}")
 
-            dest, src, text = decode_ax25(data, builder)
+            dest, src, text = builder.decode(data)
 
             if dest is not None:
                 print(f"{BLUE}[DECODED]{RESET} {src} → {dest} : {text}")
