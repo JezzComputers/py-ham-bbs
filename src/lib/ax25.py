@@ -44,6 +44,8 @@ def kiss_unescape(data: bytes) -> bytes:
             i += 1
 
     return bytes(out)
+
+
 def parse_ax25_addresses(frame: bytes) -> tuple[list[bytes], int]:
     addresses: list[bytes] = []
     idx = 0
