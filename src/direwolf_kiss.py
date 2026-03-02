@@ -29,9 +29,6 @@ KISS_PORT = 8001
 RIGCTL_HOST = "127.0.0.1"
 RIGCTL_PORT = 4532
 
-# Set this to True to use an in-process dummy rig
-USE_DUMMY_RIG = False
-
 # Extra PTT hold time (seconds) to keep PTT asserted after estimated TX time.
 PTT_EXTRA_HOLD = 0
 
