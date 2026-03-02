@@ -33,9 +33,9 @@ def kiss_connect(host: str = KISS_HOST, port: int = KISS_PORT) -> socket.socket:
 
 def send_frame(tx_socket: socket.socket, text: str, builder: AX25FrameBuilder) -> None:
     """Build a KISS frame from `text` and send it to Direwolf."""
-    payload = text.encode("utf-8")
-    frame = builder.build_ax25_frame(payload)
-    kiss_frame = builder.build_kiss_frame(frame)
+    payload: bytes = text.encode("utf-8")
+    frame: bytes = builder.build_ax25_frame(payload)
+    kiss_frame: bytes = builder.build_kiss_frame(frame)
 
     tx_socket.sendall(kiss_frame)
     print(f"{GREEN}[TX]{RESET} {text}")
@@ -44,7 +44,7 @@ def send_frame(tx_socket: socket.socket, text: str, builder: AX25FrameBuilder) -
 def listener(rx_socket: socket.socket, builder: AX25FrameBuilder) -> None:
     while True:
         try:
-            data = rx_socket.recv(4096)
+            data: bytes = rx_socket.recv(4096)
             if not data:
                 print(f"{MAGENTA}RX socket closed{RESET}")
                 break

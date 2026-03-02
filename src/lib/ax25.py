@@ -1,7 +1,7 @@
 def ax25_call(callsign: str, ssid: int = 0, last: bool = False) -> bytes:
     callsign = callsign.upper().ljust(6)
     encoded = bytes([(ord(c) << 1) & 0xFE for c in callsign])
-    ssid_byte = 0x60 | ((ssid & 0x0F) << 1)
+    ssid_byte: int = 0x60 | ((ssid & 0x0F) << 1)
     if last:
         ssid_byte |= 0x01
     return encoded + bytes([ssid_byte])
@@ -14,9 +14,9 @@ def kiss_escape(data: bytes) -> bytes:
 def kiss_unescape(data: bytes) -> bytes:
     out = bytearray()
     i = 0
-    length = len(data)
+    length: int = len(data)
     while i < length:
-        byte = data[i]
+        byte: int = data[i]
         if byte != 0xDB:
             out.append(byte)
             i += 1
@@ -29,7 +29,7 @@ def kiss_unescape(data: bytes) -> bytes:
             i += 1
             continue
 
-        next_byte = data[i + 1]
+        next_byte: int = data[i + 1]
         if next_byte == 0xDC:
             # FESC TFEND -> FEND (0xC0)
             out.append(0xC0)
@@ -52,7 +52,7 @@ def parse_ax25_addresses(frame: bytes) -> tuple[list[bytes], int]:
     while True:
         if idx + 7 > len(frame):
             raise ValueError("truncated AX.25 address field")
-        addr = frame[idx : idx + 7]
+        addr: bytes = frame[idx : idx + 7]
         addresses.append(addr)
         idx += 7
         if addr[6] & 0x01:
@@ -61,22 +61,22 @@ def parse_ax25_addresses(frame: bytes) -> tuple[list[bytes], int]:
 
 
 def decode_call(raw: bytes) -> str:
-    call = "".join(chr(b >> 1) for b in raw[:6]).strip()
-    ssid = (raw[6] >> 1) & 0x0F
+    call: str = "".join(chr(b >> 1) for b in raw[:6]).strip()
+    ssid: int = (raw[6] >> 1) & 0x0F
     return f"{call}-{ssid}"
 
 
 class AX25Config:
-    def __init__(self, dest_call: str, dest_ssid: int, src_call: str, src_ssid: int):
-        self.dest_call = dest_call
-        self.dest_ssid = dest_ssid
-        self.src_call = src_call
-        self.src_ssid = src_ssid
+    def __init__(self, dest_call: str, dest_ssid: int, src_call: str, src_ssid: int) -> None:
+        self.dest_call: str = dest_call
+        self.dest_ssid: int = dest_ssid
+        self.src_call: str = src_call
+        self.src_ssid: int = src_ssid
         self._build_frames()
 
     def _build_frames(self) -> None:
-        self._dest_frame = ax25_call(self.dest_call, self.dest_ssid)
-        self._src_frame = ax25_call(self.src_call, self.src_ssid, last=True)
+        self._dest_frame: bytes = ax25_call(self.dest_call, self.dest_ssid)
+        self._src_frame: bytes = ax25_call(self.src_call, self.src_ssid, last=True)
 
     @property
     def dest_frame(self) -> bytes:
@@ -88,8 +88,8 @@ class AX25Config:
 
 
 class AX25FrameBuilder:
-    def __init__(self, config: AX25Config):
-        self.config = config
+    def __init__(self, config: AX25Config) -> None:
+        self.config: AX25Config = config
 
     def build_ax25_frame(self, payload: bytes) -> bytes:
         CONTROL = b"\x03"
@@ -113,10 +113,10 @@ class AX25FrameBuilder:
         - baud: nominal bit rate (default 1200)
         - overhead: additional seconds to add for PTT/keying/etc.
         """
-        bits = (len(ax25_frame) + 2) * 8
+        bits: int = (len(ax25_frame) + 2) * 8
         return bits / float(baud) + float(overhead)
 
-    def decode(self, frame: bytes):
+    def decode(self, frame: bytes) -> tuple[None, None, None] | tuple[str, str, str]:
         try:
             if not frame:
                 return None, None, None
@@ -125,7 +125,7 @@ class AX25FrameBuilder:
             # non-empty chunk between FEND bytes. This handles multiple
             # concatenated frames more robustly than stripping all FENDs.
             if 0xC0 in frame:
-                chunks = frame.split(b"\xC0")
+                chunks: list[bytes] = frame.split(b"\xc0")
                 # Pick the first non-empty chunk (if any)
                 frame = next((c for c in chunks if c), b"")
 
@@ -146,18 +146,18 @@ class AX25FrameBuilder:
                 return None, None, None
             if len(addresses) < 2:
                 return None, None, None
-            dest_raw = addresses[0]
-            src_raw = addresses[1]
+            dest_raw: bytes = addresses[0]
+            src_raw: bytes = addresses[1]
             # Require at least CONTROL and PID bytes after the addresses.
             if len(frame) < idx + 2:
                 return None, None, None
-            payload = frame[idx + 2 :]
+            payload: bytes = frame[idx + 2 :]
 
-            dest = decode_call(dest_raw)
-            src = decode_call(src_raw)
+            dest: str = decode_call(dest_raw)
+            src: str = decode_call(src_raw)
 
             try:
-                text = payload.decode("utf-8", errors="replace")
+                text: str = payload.decode("utf-8", errors="replace")
             except Exception:
                 text = "<non-text payload>"
 
