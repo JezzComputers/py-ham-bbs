@@ -8,8 +8,6 @@ Tools and configuration files for building a lightweight ham radio packet BBS ma
 
 If possible the radio should be in FM-D (FM Data) mode as audio goes through the DATA path (USB soundcard or ACC connector) which is flat, wide, and unprocessed (what AX.25 wants)
 
-Documentation can be accessed in the sepperate [google doc](https://example.com/). ! Not yet accessable
-
 ## GitHub Actions
 
 - **Badge**: The CI badge at the top links to the `python-tests.yml` workflow and shows the current status for the `main` branch.
