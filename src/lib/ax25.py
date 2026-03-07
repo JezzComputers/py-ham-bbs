@@ -89,14 +89,19 @@ class AX25Config:
 
 
 class AX25FrameBuilder:
-    def __init__(self, config: AX25Config) -> None:
+    def __init__(self, config: AX25Config, control: bytes = b"\x03", pid: bytes = b"\x01") -> None:
+        """Build AX.25 frames.
+
+        Defaults: CONTROL = 0x03 (UI), PID = 0x01 (unstructured).
+        """
         self.config: AX25Config = config
+        self.control: bytes = control
+        self.pid: bytes = pid
 
     def build_ax25_frame(self, payload: bytes) -> bytes:
-        CONTROL: bytes = b"\x03"
-        PID: bytes = b"\xf0"
-
-        return self.config.dest_frame + self.config.src_frame + CONTROL + PID + payload
+        frame = self.config.dest_frame + self.config.src_frame + self.control + self.pid + payload
+        print("AX25 frame:", frame.hex())
+        return frame
 
     def build_kiss_frame(self, ax25_frame: bytes) -> bytes:
         """Build a KISS-framed byte sequence for the given AX.25 frame.
