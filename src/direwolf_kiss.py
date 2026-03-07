@@ -20,12 +20,8 @@ from lib.ax25 import (
     AX25FrameBuilder,
 )
 
-# Configuration
-KISS_HOST = "127.0.0.1"
-KISS_PORT = 8001
 
-
-def kiss_connect(host: str = KISS_HOST, port: int = KISS_PORT) -> socket.socket:
+def kiss_connect(host: str = "127.0.0.1", port: int = 8001) -> socket.socket:
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.connect((host, port))
     return s
@@ -69,8 +65,8 @@ def main() -> None:
     use_color()
 
     try:
-        tx_socket = kiss_connect()
-        rx_socket = kiss_connect()
+        tx_socket: socket.socket = kiss_connect()
+        rx_socket: socket.socket = kiss_connect()
     except Exception as e:
         print(f"{MAGENTA}KISS connect failed:{RESET} {e}")
         sys.exit(1)
