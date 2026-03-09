@@ -1,5 +1,8 @@
+import zlib
+
+
 def ax25_call(callsign: str, ssid: int = 0, last: bool = False) -> bytes:
-    # Truncate to 6 chars then pad to ensure exactly 6-character callsign
+    """Truncate to 6 chars then pad to ensure exactly 6-character callsign"""
     callsign = callsign.upper()[:6].ljust(6)
     encoded = bytes([(ord(c) << 1) & 0xFE for c in callsign])
     ssid_byte: int = 0x60 | ((ssid & 0x0F) << 1)
@@ -73,9 +76,6 @@ class AX25Config:
         self.dest_ssid: int = dest_ssid
         self.src_call: str = src_call
         self.src_ssid: int = src_ssid
-        self._build_frames()
-
-    def _build_frames(self) -> None:
         self._dest_frame: bytes = ax25_call(self.dest_call, self.dest_ssid)
         self._src_frame: bytes = ax25_call(self.src_call, self.src_ssid, last=True)
 
@@ -99,8 +99,12 @@ class AX25FrameBuilder:
         self.pid: bytes = pid
 
     def build_ax25_frame(self, payload: bytes) -> bytes:
-        frame = self.config.dest_frame + self.config.src_frame + self.control + self.pid + payload
-        print("AX25 frame:", frame.hex())
+        if len(zlib.compress(payload, level=9, wbits=15)) < len(payload):
+            frame: bytes = self.config.dest_frame + self.config.src_frame + self.control + self.pid + zlib.compress(payload, level=9, wbits=15)
+            print(f"Compressed AX25 frame: {frame.hex()}")
+        else:
+            frame: bytes = self.config.dest_frame + self.config.src_frame + self.control + self.pid + payload
+            print(f"Not compressed AX25 frame: {frame.hex()}")
         return frame
 
     def build_kiss_frame(self, ax25_frame: bytes) -> bytes:
@@ -149,11 +153,18 @@ class AX25FrameBuilder:
                 return None
             payload: bytes = frame[idx + 2 :]
 
+            try:
+                frame = zlib.decompress(payload)
+                print("zlib detected, decompressing")
+            except zlib.error:
+                frame = payload
+                print("zlib not detected, not decompressing")
+
             dest: str = decode_call(dest_raw)
             src: str = decode_call(src_raw)
 
             try:
-                text: str = payload.decode("utf-8", errors="replace")
+                text: str = frame.decode("utf-8", errors="replace")
             except Exception:
                 text = "<non-text payload>"
 
