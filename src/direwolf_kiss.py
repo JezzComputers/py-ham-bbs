@@ -42,6 +42,7 @@ def listener(rx_socket: socket.socket, builder: AX25FrameBuilder) -> None:
         try:
             data: bytes = rx_socket.recv(4096)
             if not data:
+                print(f"{MAGENTA}RX socket closed{RESET}")
                 break
 
             print(f"\n{CYAN}[RX RAW]{RESET} {data.hex()}")
@@ -62,6 +63,29 @@ def listener(rx_socket: socket.socket, builder: AX25FrameBuilder) -> None:
 config = AX25Config("NOCALL", 0, "VK3ETH", 0)
 builder = AX25FrameBuilder(config)
 
+def setuser():
+    while True:
+        mainuser = input("WHO ARE YOU >>> ").upper()
+        if mainuser == "EXIT":
+            sys.exit(0)
+        print()
+        if not (mainuser.startswith("VK3") and len(mainuser) == 6):
+                print("Invalid user try again")
+                continue
+        return mainuser
+
+def setdestination():
+    while True:
+        print("Who would you like to message")
+        user = input("CALLSIGN >>> ").strip().upper()
+        if user == "EXIT":
+            sys.exit(0)
+        if not (user.startswith("VK3") and len(user) == 6):
+                print("Invalid user try again")
+                continue
+        return user
+
+
 def main() -> None:
     use_color()
 
@@ -79,24 +103,31 @@ def main() -> None:
     threading.Thread(target=listener, args=(rx_socket, builder), daemon=True).start()
 
     print(f"{GREEN}KISS console ready (PTT handled by Direwolf).{RESET}")
-    print("Type messages and press Enter.\n")
-
+    
+    mainuser = setuser()
+    user = setdestination()
     while True:
         try:
+            print()
+            print(f"{BLUE}type (differnt) to change to a differnt user{RESET}")
+            print()
+            print("Type your message and press Enter.")
             msg = input("MESSAGE >>> ").strip()
-            
-            print("Who would you like this message to go to")
-            user = input("CALLSIGN >>> ").strip().upper()
+            print()
 
-            if not (user.startswith("VK3") and len(user) == 6):
-                print("Invalid user try again")
-                continue
+            if msg == "differnt":
+                user = setdestination()
+            elif msg == "exit":
+                sys.exit(0)
+            elif msg == "EXIT":
+                sys.exit(0)
+            else:
+                config = AX25Config(user, 0, mainuser, 0)
+                builder = AX25FrameBuilder(config)
 
-            config = AX25Config(user, 0, "VK3ETH", 0)
-            builder = AX25FrameBuilder(config)
-
-            send_frame(tx_socket, msg, builder)
-
+                send_frame(tx_socket, msg, builder)
+                
+             
         except KeyboardInterrupt:
             print("\nExiting.")
             sys.exit(0)
