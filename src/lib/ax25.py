@@ -12,41 +12,35 @@ def ax25_call(callsign: str, ssid: int = 0, last: bool = False) -> bytes:
 
 
 def kiss_escape(data: bytes) -> bytes:
-    return data.replace(b"\xdb", b"\xdb\xdd").replace(b"\xc0", b"\xdb\xdc")
+    out = bytearray()
+    for b in data:
+        if b == 0xDB:
+            out += b"\xdb\xdd"
+        elif b == 0xC0:
+            out += b"\xdb\xdc"
+        else:
+            out.append(b)
+    return bytes(out)
 
 
 def kiss_unescape(data: bytes) -> bytes:
     out = bytearray()
     i = 0
-    length: int = len(data)
+    length = len(data)
     while i < length:
-        byte: int = data[i]
-        if byte != 0xDB:
-            out.append(byte)
-            i += 1
-            continue
-
-        # Saw FESC (0xDB). Try to interpret an escape sequence.
-        if i + 1 >= length:
-            # Dangling FESC at end: treat as literal 0xDB.
-            out.append(0xDB)
-            i += 1
-            continue
-
-        next_byte: int = data[i + 1]
-        if next_byte == 0xDC:
-            # FESC TFEND -> FEND (0xC0)
-            out.append(0xC0)
-            i += 2
-        elif next_byte == 0xDD:
-            # FESC TFESC -> FESC (0xDB)
-            out.append(0xDB)
-            i += 2
-        else:
-            # Non-standard sequence: keep literal 0xDB and process next normally.
-            out.append(0xDB)
-            i += 1
-
+        b = data[i]
+        if b == 0xDB and i + 1 < length:
+            next = data[i + 1]
+            if next == 0xDC:
+                out.append(0xC0)
+                i += 2
+                continue
+            elif next == 0xDD:
+                out.append(0xDB)
+                i += 2
+                continue
+        out.append(b)
+        i += 1
     return bytes(out)
 
 
