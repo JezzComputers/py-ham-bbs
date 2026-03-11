@@ -1,3 +1,5 @@
+# Run tests with: pytest && pyright && ruff check .
+
 # Project configuration
 [project]
 name = "py-ham-bbs"
@@ -7,16 +9,53 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = []
 
-# pytest configuration
-[tool.pytest]
-minversion = "9"
+# Install with uv sync --upgrade --all-groups
+[dependency-groups]
+dev = ["pyright", "pytest", "ruff"]
+
+[tool.pytest.ini_options]
+minversion = "9.0"
+addopts = ["-ra", "--strict-config", "-v"]
 testpaths = ["tests"]
-addopts = ["-v"]
 python_files = ["test_*.py"]
 filterwarnings = ["always"]
 pythonpath = ["src"]
 
-# Install with uv sync --group <name> <optional package>
-# Or uv sync --dev <optional package>
-[dependency-groups]
-dev = ["pyright", "pytest", "ruff"]
+[tool.ruff]
+target-version = "py314"
+line-length = 320
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+	"D",      # All docstring rules
+	"T20",    # print() rules
+	"TC003",  # All std imports without typecheck
+	"FBT",    # boolean trap rules
+	"PLR",    # magic values, too many returns, etc.
+	"TRY",    # exception message rules
+	"EM",     # exception literal rules
+	"B028",   # warnings stacklevel
+	"INP",    # implicit namespace package
+	"S101",   # assert in tests
+	"C90",    # complexity rules
+	"W191",   # Allow tabs for indentation
+	"ERA",    # Allow commented-out code
+	"E501",   # Allow long lines
+	"COM812", # avoid formatter conflict warnings
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "tab"
+line-ending = "lf"
+
+[tool.pyright]
+typeCheckingMode = "strict"
+reportMissingTypeStubs = true
+reportUnusedImport = "error"
+reportUnusedVariable = "error"
+reportPrivateUsage = "error"
+reportIncompatibleMethodOverride = "error"
+reportIncompatibleVariableOverride = "error"
+reportUntypedFunctionDecorator = "error"
