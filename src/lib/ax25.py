@@ -11,18 +11,6 @@ def ax25_call(callsign: str, ssid: int = 0, last: bool = False) -> bytes:
 	return encoded + bytes([ssid_byte])
 
 
-def kiss_escape(data: bytes) -> bytes:
-	out: bytearray = bytearray()
-	for b in data:
-		if b == 0xDB:
-			out += b"\xdb\xdd"
-		elif b == 0xC0:
-			out += b"\xdb\xdc"
-		else:
-			out.append(b)
-	return bytes(out)
-
-
 def kiss_unescape(data: bytes) -> bytes:
 	out: bytearray = bytearray()
 	i = 0
@@ -65,20 +53,53 @@ def decode_call(raw: bytes) -> str:
 
 
 class AX25Config:
-	def __init__(
-		self,
-		dest_call: str,
-		dest_ssid: int,
-		src_call: str,
-		src_ssid: int,
-	) -> None:
-		self.dest_call: str = dest_call
-		self.dest_ssid: int = dest_ssid
-		self.src_call: str = src_call
-		self.src_ssid: int = src_ssid
-		self._dest_frame: bytes = ax25_call(self.dest_call, self.dest_ssid)
-		self._src_frame: bytes = ax25_call(self.src_call, self.src_ssid, last=True)
+	def __init__(self, dest_call: str, dest_ssid: int, src_call: str, src_ssid: int) -> None:
+		self._dest_call: str = dest_call
+		self._dest_ssid: int = dest_ssid
+		self._src_call: str = src_call
+		self._src_ssid: int = src_ssid
+		self._dest_frame: bytes = ax25_call(self._dest_call, self._dest_ssid)
+		self._src_frame: bytes = ax25_call(self._src_call, self._src_ssid, last=True)
 
+	# Destination properties
+	@property
+	def dest_call(self) -> str:
+		return self._dest_call
+
+	@dest_call.setter
+	def dest_call(self, value: str) -> None:
+		self._dest_call = value
+		self._dest_frame = ax25_call(self._dest_call, self._dest_ssid)
+
+	@property
+	def dest_ssid(self) -> int:
+		return self._dest_ssid
+
+	@dest_ssid.setter
+	def dest_ssid(self, value: int) -> None:
+		self._dest_ssid = value
+		self._dest_frame = ax25_call(self._dest_call, self._dest_ssid)
+
+	# Source properties
+	@property
+	def src_call(self) -> str:
+		return self._src_call
+
+	@src_call.setter
+	def src_call(self, value: str) -> None:
+		self._src_call = value
+		self._src_frame = ax25_call(self._src_call, self._src_ssid, last=True)
+
+	@property
+	def src_ssid(self) -> int:
+		return self._src_ssid
+
+	@src_ssid.setter
+	def src_ssid(self, value: int) -> None:
+		self._src_ssid = value
+		self._src_frame = ax25_call(self._src_call, self._src_ssid, last=True)
+
+	# Encoded frames
 	@property
 	def dest_frame(self) -> bytes:
 		return self._dest_frame
@@ -89,38 +110,33 @@ class AX25Config:
 
 
 class AX25FrameBuilder:
-	def __init__(
-		self,
-		config: AX25Config,
-		control: bytes = b"\x03",
-		pid: bytes = b"\x01",
-	) -> None:
-		"""Build AX.25 frames.
-
-		Defaults: CONTROL = 0x03 (UI), PID = 0x01 (unstructured).
-		"""
+	def __init__(self, config: AX25Config, control: bytes = b"\x03", pid: bytes = b"\x01") -> None:
 		self.config: AX25Config = config
 		self.control: bytes = control
 		self.pid: bytes = pid
 
 	def build_ax25_frame(self, payload: bytes) -> bytes:
-		compressed = zlib.compress(payload, level=9, wbits=15)
+		compressed: bytes = zlib.compress(payload, level=9, wbits=15)
 		if len(compressed) < len(payload):
 			frame = self.config.dest_frame + self.config.src_frame + self.control + self.pid + compressed
 			print(f"Compressed AX25 frame: {frame.hex()}")
 		else:
 			frame = self.config.dest_frame + self.config.src_frame + self.control + self.pid + payload
-			print(f"Not compressed AX25 frame: {frame.hex()}")
+			print(f"Uncompressed AX25 frame: {frame.hex()}")
 		return frame
 
 	def build_kiss_frame(self, ax25_frame: bytes) -> bytes:
-		"""Build a KISS-framed byte sequence for the given AX.25 frame.
-
-		Note: the TNC (Direwolf) appends the 2-byte FCS on-air, so this
-		function does not append an FCS. Keep framing simple and let the
-		TNC handle FCS.
-		"""
-		return b"\xc0\x00" + kiss_escape(ax25_frame) + b"\xc0"
+		out: bytearray = bytearray()
+		out += b"\xc0\x00"
+		for b in ax25_frame:
+			if b == 0xDB:
+				out += b"\xdb\xdd"
+			elif b == 0xC0:
+				out += b"\xdb\xdc"
+			else:
+				out.append(b)
+		out += b"\xc0"
+		return bytes(out)
 
 	def decode(self, frame_bytes: bytes) -> tuple[str, str, str] | None:
 		try:
