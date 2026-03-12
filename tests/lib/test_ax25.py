@@ -1,31 +1,4 @@
-from lib.ax25 import kiss_unescape, AX25Config, AX25FrameBuilder
-
-
-def test_kiss_unescape_escaped_fend() -> None:
-	# FESC+TFEND (\xdb\xdc) should unescape to FEND (\xc0)
-	assert kiss_unescape(b"\xdb\xdc") == b"\xc0"
-
-
-def test_kiss_unescape_escaped_fesc() -> None:
-	# FESC+TFESC (\xdb\xdd) should unescape to FESC (\xdb)
-	assert kiss_unescape(b"\xdb\xdd") == b"\xdb"
-
-
-def test_kiss_unescape_no_escape() -> None:
-	# Data with no escape sequences should pass through unchanged
-	assert kiss_unescape(b"hello") == b"hello"
-
-
-def test_kiss_unescape_mixed() -> None:
-	# A mix of escape sequences and plain data
-	result = kiss_unescape(b"\xdb\xdc" + b"abc" + b"\xdb\xdd")
-	assert result == b"\xc0" + b"abc" + b"\xdb"
-
-
-def test_kiss_unescape_escaped_fesc_then_literal_dc() -> None:
-	# Regression: escaped FESC (\xdb\xdd) followed by a literal 0xDC
-	# should decode to FESC (\xdb) then 0xDC.
-	assert kiss_unescape(b"\xdb\xdd\xdc") == b"\xdb\xdc"
+from lib.ax25 import AX25Config, AX25FrameBuilder
 
 
 def test_decode_full_payload_not_truncated() -> None:

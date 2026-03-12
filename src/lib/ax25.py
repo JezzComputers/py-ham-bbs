@@ -11,27 +11,6 @@ def ax25_call(callsign: str, ssid: int = 0, last: bool = False) -> bytes:
 	return encoded + bytes([ssid_byte])
 
 
-def kiss_unescape(data: bytes) -> bytes:
-	out: bytearray = bytearray()
-	i = 0
-	length: int = len(data)
-	while i < length:
-		b: int = data[i]
-		if b == 0xDB and i + 1 < length:
-			next: int = data[i + 1]
-			if next == 0xDC:
-				out.append(0xC0)
-				i += 2
-				continue
-			if next == 0xDD:
-				out.append(0xDB)
-				i += 2
-				continue
-		out.append(b)
-		i += 1
-	return bytes(out)
-
-
 def parse_ax25_addresses(frame: bytes) -> tuple[list[bytes], int]:
 	addresses: list[bytes] = []
 	idx = 0
@@ -117,80 +96,78 @@ class AX25FrameBuilder:
 
 	def build_ax25_frame(self, payload: bytes) -> bytes:
 		compressed: bytes = zlib.compress(payload, level=9, wbits=15)
-		if len(compressed) < len(payload):
-			frame = self.config.dest_frame + self.config.src_frame + self.control + self.pid + compressed
-			print(f"Compressed AX25 frame: {frame.hex()}")
-		else:
-			frame = self.config.dest_frame + self.config.src_frame + self.control + self.pid + payload
-			print(f"Uncompressed AX25 frame: {frame.hex()}")
-		return frame
+		return self.config.dest_frame + self.config.src_frame + self.control + self.pid + (compressed if len(compressed) < len(payload) else payload)
 
 	def build_kiss_frame(self, ax25_frame: bytes) -> bytes:
-		out: bytearray = bytearray()
-		out += b"\xc0\x00"
+		"""Add C000 ... C0 and excapes kiss frames"""
+		out: bytearray = bytearray(b"\xC0\x00")
 		for b in ax25_frame:
 			if b == 0xDB:
-				out += b"\xdb\xdd"
+				out += b"\xDB\xDD"
 			elif b == 0xC0:
-				out += b"\xdb\xdc"
+				out += b"\xDB\xDC"
 			else:
 				out.append(b)
-		out += b"\xc0"
+		out.append(0xC0)
 		return bytes(out)
 
 	def decode(self, frame_bytes: bytes) -> tuple[str, str, str] | None:
-		try:
-			if not frame_bytes:
-				return None
+		"""Takes in single whole kiss frames"""
+		# Unescape kiss frame
+		ax_array: bytearray = bytearray()
+		i = 0
+		length: int = len(frame_bytes)
+		while i < length:
+			b: int = frame_bytes[i]
+			if b == 0xDA and i + 1 < length:
+				nxt: int = frame_bytes[i + 1]
+				if nxt == 0xDC:
+					ax_array.append(0xC0)
+					i += 2
+					continue
+				elif nxt == 0xDD:
+					ax_array.append(0xDB)
+					i += 2
+					continue
+				ax_array.append(b)
+				i += 1
+			else:
+				ax_array.append(b)
+				i += 1
+		ax_frame: bytes = bytes(ax_array)
 
-			# If KISS framing (FEND 0xC0) is present, extract the first
-			# non-empty chunk between FEND bytes. This handles multiple
-			# concatenated frames more robustly than stripping all FENDs.
-			ax_frame: bytes = frame_bytes
-			if 0xC0 in ax_frame:
-				chunks: list[bytes] = ax_frame.split(b"\xc0")
-				# Pick the first non-empty chunk (if any)
-				ax_frame = next((c for c in chunks if c), b"")
+		# Strip KISS frame markers if present (FEND and command byte)
+		if len(ax_frame) >= 3 and ax_frame[0] == 0xC0 and ax_frame[1] == 0x00 and ax_frame[-1] == 0xC0:
+			ax_frame = ax_frame[2:-1]
 
-			# Remove optional KISS command byte (0x00) if present
-			if ax_frame and ax_frame[0] == 0x00:
-				ax_frame = ax_frame[1:]
-
-			# Unescape KISS special sequences
-			ax_frame = kiss_unescape(ax_frame)
-
-			# Minimal AX.25 length: two 7-byte addresses + CONTROL + PID = 16
-			if len(ax_frame) < 16:
-				return None
-
-			try:
-				addresses, idx = parse_ax25_addresses(ax_frame)
-			except ValueError:
-				return None
-			if len(addresses) < 2:
-				return None
-			dest_raw: bytes = addresses[0]
-			src_raw: bytes = addresses[1]
-			# Require at least CONTROL and PID bytes after the addresses.
-			if len(ax_frame) < idx + 2:
-				return None
-			payload: bytes = ax_frame[idx + 2 :]
-
-			try:
-				payload_data: bytes = zlib.decompress(payload)
-				print("zlib detected, decompressing")
-			except zlib.error:
-				payload_data = payload
-				print("zlib not detected, not decompressing")
-
-			dest: str = decode_call(dest_raw)
-			src: str = decode_call(src_raw)
-
-			try:
-				text: str = payload_data.decode("utf-8", errors="replace")
-			except Exception:
-				text = "<non-text payload>"
-
-			return dest, src, text
-		except Exception:
+		# Minimal AX.25 length: two 7-byte addresses + CONTROL + PID = 16
+		if len(ax_frame) < 16:
 			return None
+
+		try:
+			addresses, idx = parse_ax25_addresses(ax_frame)
+		except ValueError:
+			return None
+		if len(addresses) < 2:
+			return None
+		dest_raw: bytes = addresses[0]
+		src_raw: bytes = addresses[1]
+		# Require at least CONTROL and PID bytes after the addresses.
+		if len(ax_frame) < idx + 2:
+			return None
+		payload: bytes = ax_frame[idx + 2 :]
+
+		try:
+			payload_data: bytes = zlib.decompress(payload, wbits=15)
+		except zlib.error:
+			payload_data = payload
+
+		dest: str = decode_call(dest_raw)
+		src: str = decode_call(src_raw)
+
+		try:
+			text: str = payload_data.decode(encoding="utf-8", errors="replace")
+		except Exception:
+			text = "<not utf-8 encoded payload>"
+
+		return dest, src, text

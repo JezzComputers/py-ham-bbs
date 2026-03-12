@@ -46,6 +46,7 @@ def listener(rx_socket: socket.socket, builder: AX25FrameBuilder) -> None:
 
 			print(f"\n{CYAN}[RX RAW]{RESET} {data.hex()}")
 
+			# TODO: Make the listener wait for full kiss frames and sepperate multi frames
 			res = builder.decode(data)
 			if res is None:
 				print(f"{MAGENTA}[DECODED]{RESET} <invalid frame>")
