@@ -2,172 +2,171 @@ import zlib
 
 
 def ax25_call(callsign: str, ssid: int = 0, last: bool = False) -> bytes:
-    """Truncate to 6 chars then pad to ensure exactly 6-character callsign"""
-    callsign = callsign.upper()[:6].ljust(6)
-    encoded = bytes([(ord(c) << 1) & 0xFE for c in callsign])
-    ssid_byte: int = 0x60 | ((ssid & 0x0F) << 1)
-    if last:
-        ssid_byte |= 0x01
-    return encoded + bytes([ssid_byte])
-
-
-def kiss_escape(data: bytes) -> bytes:
-    return data.replace(b"\xdb", b"\xdb\xdd").replace(b"\xc0", b"\xdb\xdc")
-
-
-def kiss_unescape(data: bytes) -> bytes:
-    out = bytearray()
-    i = 0
-    length: int = len(data)
-    while i < length:
-        byte: int = data[i]
-        if byte != 0xDB:
-            out.append(byte)
-            i += 1
-            continue
-
-        # Saw FESC (0xDB). Try to interpret an escape sequence.
-        if i + 1 >= length:
-            # Dangling FESC at end: treat as literal 0xDB.
-            out.append(0xDB)
-            i += 1
-            continue
-
-        next_byte: int = data[i + 1]
-        if next_byte == 0xDC:
-            # FESC TFEND -> FEND (0xC0)
-            out.append(0xC0)
-            i += 2
-        elif next_byte == 0xDD:
-            # FESC TFESC -> FESC (0xDB)
-            out.append(0xDB)
-            i += 2
-        else:
-            # Non-standard sequence: keep literal 0xDB and process next normally.
-            out.append(0xDB)
-            i += 1
-
-    return bytes(out)
-
-
-def parse_ax25_addresses(frame: bytes) -> tuple[list[bytes], int]:
-    addresses: list[bytes] = []
-    idx = 0
-    while True:
-        if idx + 7 > len(frame):
-            raise ValueError("truncated AX.25 address field")
-        addr: bytes = frame[idx : idx + 7]
-        addresses.append(addr)
-        idx += 7
-        if addr[6] & 0x01:
-            break
-    return addresses, idx
+	"""Truncate to 6 chars then pad to ensure exactly 6-character callsign"""
+	_callsign: str = callsign.upper()[:6].ljust(6)
+	encoded: bytes = bytes([(ord(c) << 1) & 0xFE for c in _callsign])
+	ssid_byte: int = 0x60 | ((ssid & 0x0F) << 1)
+	if last:
+		ssid_byte |= 0x01
+	return encoded + bytes([ssid_byte])
 
 
 def decode_call(raw: bytes) -> str:
-    call: str = "".join(chr(b >> 1) for b in raw[:6]).strip()
-    ssid: int = (raw[6] >> 1) & 0x0F
-    return f"{call}-{ssid}"
+	call: str = "".join(chr(b >> 1) for b in raw[:6]).strip()
+	ssid: int = (raw[6] >> 1) & 0x0F
+	return f"{call}-{ssid}"
+
+
+def parse_ax25_addresses(frame: bytes) -> tuple[list[bytes], int]:
+	addresses: list[bytes] = []
+	idx = 0
+	while True:
+		if idx + 7 > len(frame):
+			raise ValueError("truncated AX.25 address field")
+		addr: bytes = frame[idx : idx + 7]
+		addresses.append(addr)
+		idx += 7
+		if addr[6] & 0x01:
+			break
+	return addresses, idx
 
 
 class AX25Config:
-    def __init__(self, dest_call: str, dest_ssid: int, src_call: str, src_ssid: int) -> None:
-        self.dest_call: str = dest_call
-        self.dest_ssid: int = dest_ssid
-        self.src_call: str = src_call
-        self.src_ssid: int = src_ssid
-        self._dest_frame: bytes = ax25_call(self.dest_call, self.dest_ssid)
-        self._src_frame: bytes = ax25_call(self.src_call, self.src_ssid, last=True)
+	def __init__(self, dest_call: str, dest_ssid: int, src_call: str, src_ssid: int) -> None:
+		self._dest_call: str = dest_call
+		self._dest_ssid: int = dest_ssid
+		self._src_call: str = src_call
+		self._src_ssid: int = src_ssid
+		self._dest_frame: bytes = ax25_call(self._dest_call, self._dest_ssid)
+		self._src_frame: bytes = ax25_call(self._src_call, self._src_ssid, last=True)
 
-    @property
-    def dest_frame(self) -> bytes:
-        return self._dest_frame
+	# Destination properties
+	@property
+	def dest_call(self) -> str:
+		return self._dest_call
 
-    @property
-    def src_frame(self) -> bytes:
-        return self._src_frame
+	@dest_call.setter
+	def dest_call(self, value: str) -> None:
+		self._dest_call = value
+		self._dest_frame = ax25_call(self._dest_call, self._dest_ssid)
+
+	@property
+	def dest_ssid(self) -> int:
+		return self._dest_ssid
+
+	@dest_ssid.setter
+	def dest_ssid(self, value: int) -> None:
+		self._dest_ssid = value
+		self._dest_frame = ax25_call(self._dest_call, self._dest_ssid)
+
+	# Source properties
+	@property
+	def src_call(self) -> str:
+		return self._src_call
+
+	@src_call.setter
+	def src_call(self, value: str) -> None:
+		self._src_call = value
+		self._src_frame = ax25_call(self._src_call, self._src_ssid, last=True)
+
+	@property
+	def src_ssid(self) -> int:
+		return self._src_ssid
+
+	@src_ssid.setter
+	def src_ssid(self, value: int) -> None:
+		self._src_ssid = value
+		self._src_frame = ax25_call(self._src_call, self._src_ssid, last=True)
+
+	# Encoded frames
+	@property
+	def dest_frame(self) -> bytes:
+		return self._dest_frame
+
+	@property
+	def src_frame(self) -> bytes:
+		return self._src_frame
 
 
 class AX25FrameBuilder:
-    def __init__(self, config: AX25Config, control: bytes = b"\x03", pid: bytes = b"\x01") -> None:
-        """Build AX.25 frames.
+	def __init__(self, config: AX25Config, control: bytes = b"\x03", pid: bytes = b"\x01") -> None:
+		self.config: AX25Config = config
+		self.control: bytes = control
+		self.pid: bytes = pid
 
-        Defaults: CONTROL = 0x03 (UI), PID = 0x01 (unstructured).
-        """
-        self.config: AX25Config = config
-        self.control: bytes = control
-        self.pid: bytes = pid
+	def build_ax25_frame(self, payload: bytes) -> bytes:
+		compressed: bytes = zlib.compress(payload, level=9, wbits=15)
+		return self.config.dest_frame + self.config.src_frame + self.control + self.pid + (compressed if len(compressed) < len(payload) else payload)
 
-    def build_ax25_frame(self, payload: bytes) -> bytes:
-        if len(zlib.compress(payload, level=9, wbits=15)) < len(payload):
-            frame: bytes = self.config.dest_frame + self.config.src_frame + self.control + self.pid + zlib.compress(payload, level=9, wbits=15)
-            print(f"Compressed AX25 frame: {frame.hex()}")
-        else:
-            frame: bytes = self.config.dest_frame + self.config.src_frame + self.control + self.pid + payload
-            print(f"Not compressed AX25 frame: {frame.hex()}")
-        return frame
+	def build_kiss_frame(self, ax25_frame: bytes) -> bytes:
+		"""Add C000 ... C0 and escapes kiss frames"""
+		out: bytearray = bytearray(b"\xC0\x00")
+		for b in ax25_frame:
+			if b == 0xDB:
+				out.extend(b"\xDB\xDD")
+			elif b == 0xC0:
+				out.extend(b"\xDB\xDC")
+			else:
+				out.append(b)
+		out.append(0xC0)
+		return bytes(out)
 
-    def build_kiss_frame(self, ax25_frame: bytes) -> bytes:
-        """Build a KISS-framed byte sequence for the given AX.25 frame.
+	def decode(self, frame_bytes: bytes) -> tuple[str, str, str] | None:
+		"""Takes in single whole kiss frames"""
+		# Validate and strip KISS frame markers (FEND and command byte)
+		if not (len(frame_bytes) >= 3 and frame_bytes[0] == 0xC0 and frame_bytes[-1] == 0xC0) or (frame_bytes[1] != 0x00):
+			return None
 
-        Note: the TNC (Direwolf) appends the 2-byte FCS on-air, so this
-        function does not append an FCS. Keep framing simple and let the
-        TNC handle FCS.
-        """
-        return b"\xc0\x00" + kiss_escape(ax25_frame) + b"\xc0"
+		kiss_payload: bytes = frame_bytes[2:-1]
 
-    def decode(self, frame: bytes) -> tuple[str, str, str] | None:
-        try:
-            if not frame:
-                return None
+		# Unescape KISS payload to recover raw AX.25 frame
+		ax_array: bytearray = bytearray()
+		i = 0
+		length: int = len(kiss_payload)
+		while i < length:
+			b: int = kiss_payload[i]
+			if b == 0xDB and i + 1 < length:
+				nxt: int = kiss_payload[i + 1]
+				if nxt == 0xDC:
+					ax_array.append(0xC0)
+					i += 2
+					continue
+				if nxt == 0xDD:
+					ax_array.append(0xDB)
+					i += 2
+					continue
+				ax_array.append(b)
+				i += 1
+			else:
+				ax_array.append(b)
+				i += 1
+		ax_frame: bytes = bytes(ax_array)
 
-            # If KISS framing (FEND 0xC0) is present, extract the first
-            # non-empty chunk between FEND bytes. This handles multiple
-            # concatenated frames more robustly than stripping all FENDs.
-            if 0xC0 in frame:
-                chunks: list[bytes] = frame.split(b"\xc0")
-                # Pick the first non-empty chunk (if any)
-                frame = next((c for c in chunks if c), b"")
+		# Minimal AX.25 length: two 7-byte addresses + CONTROL + PID = 16
+		if len(ax_frame) < 16:
+			return None
 
-            # Remove optional KISS command byte (0x00) if present
-            if frame and frame[0] == 0x00:
-                frame = frame[1:]
+		try:
+			addresses, idx = parse_ax25_addresses(ax_frame)
+		except ValueError:
+			return None
+		if len(addresses) < 2:
+			return None
+		dest_raw: bytes = addresses[0]
+		src_raw: bytes = addresses[1]
+		# Require at least CONTROL and PID bytes after the addresses.
+		if len(ax_frame) < idx + 2:
+			return None
+		payload: bytes = ax_frame[idx + 2 :]
 
-            # Unescape KISS special sequences
-            frame = kiss_unescape(frame)
+		try:
+			payload_data: bytes = zlib.decompress(payload, wbits=15)
+		except zlib.error:
+			payload_data = payload
 
-            # Minimal AX.25 length: two 7-byte addresses + CONTROL + PID = 16
-            if len(frame) < 16:
-                return None
+		dest: str = decode_call(dest_raw)
+		src: str = decode_call(src_raw)
 
-            try:
-                addresses, idx = parse_ax25_addresses(frame)
-            except ValueError:
-                return None
-            if len(addresses) < 2:
-                return None
-            dest_raw: bytes = addresses[0]
-            src_raw: bytes = addresses[1]
-            # Require at least CONTROL and PID bytes after the addresses.
-            if len(frame) < idx + 2:
-                return None
-            payload: bytes = frame[idx + 2 :]
+		text: str = payload_data.decode(encoding="utf-8", errors="replace")
 
-            try:
-                frame = zlib.decompress(payload)
-                print("zlib detected, decompressing")
-            except zlib.error:
-                frame = payload
-                print("zlib not detected, not decompressing")
-
-            dest: str = decode_call(dest_raw)
-            src: str = decode_call(src_raw)
-
-            try:
-                text: str = frame.decode("utf-8", errors="replace")
-            except Exception:
-                text = "<non-text payload>"
-
-            return dest, src, text
-        except Exception:
-            return None
+		return dest, src, text

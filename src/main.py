@@ -3,9 +3,9 @@ Demonstrates the warnings colouring system.
 Replace with BBS
 """
 
-from lib.terminal import use_color
 from warnings import warn
 
+from lib.terminal import use_color
 
 warn("This is a userwarning", UserWarning)
 warn("This is a runtimewarning", RuntimeWarning)
