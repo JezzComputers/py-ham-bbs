@@ -103,9 +103,9 @@ class AX25FrameBuilder:
 		out: bytearray = bytearray(b"\xC0\x00")
 		for b in ax25_frame:
 			if b == 0xDB:
-				out += b"\xDB\xDD"
+				out.extend(b"\xDB\xDD")
 			elif b == 0xC0:
-				out += b"\xDB\xDC"
+				out.extend(b"\xDB\xDC")
 			else:
 				out.append(b)
 		out.append(0xC0)
