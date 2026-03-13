@@ -11,6 +11,12 @@ def ax25_call(callsign: str, ssid: int = 0, last: bool = False) -> bytes:
 	return encoded + bytes([ssid_byte])
 
 
+def decode_call(raw: bytes) -> str:
+	call: str = "".join(chr(b >> 1) for b in raw[:6]).strip()
+	ssid: int = (raw[6] >> 1) & 0x0F
+	return f"{call}-{ssid}"
+
+
 def parse_ax25_addresses(frame: bytes) -> tuple[list[bytes], int]:
 	addresses: list[bytes] = []
 	idx = 0
@@ -23,12 +29,6 @@ def parse_ax25_addresses(frame: bytes) -> tuple[list[bytes], int]:
 		if addr[6] & 0x01:
 			break
 	return addresses, idx
-
-
-def decode_call(raw: bytes) -> str:
-	call: str = "".join(chr(b >> 1) for b in raw[:6]).strip()
-	ssid: int = (raw[6] >> 1) & 0x0F
-	return f"{call}-{ssid}"
 
 
 class AX25Config:
@@ -119,13 +119,13 @@ class AX25FrameBuilder:
 		length: int = len(frame_bytes)
 		while i < length:
 			b: int = frame_bytes[i]
-			if b == 0xDA and i + 1 < length:
+			if b == 0xDB and i + 1 < length:
 				nxt: int = frame_bytes[i + 1]
 				if nxt == 0xDC:
 					ax_array.append(0xC0)
 					i += 2
 					continue
-				elif nxt == 0xDD:
+				if nxt == 0xDD:
 					ax_array.append(0xDB)
 					i += 2
 					continue
@@ -167,7 +167,7 @@ class AX25FrameBuilder:
 
 		try:
 			text: str = payload_data.decode(encoding="utf-8", errors="replace")
-		except Exception:
-			text = "<not utf-8 encoded payload>"
+		except (AttributeError, TypeError, LookupError) as e:
+			text = f"<not utf-8 encoded payload: {e}>"
 
 		return dest, src, text

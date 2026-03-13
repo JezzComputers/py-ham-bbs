@@ -56,7 +56,7 @@ def listener(rx_socket: socket.socket, builder: AX25FrameBuilder) -> None:
 
 			print(">>> ", end="", flush=True)
 
-		except Exception as e:
+		except OSError as e:
 			print(f"{MAGENTA}RX error:{RESET} {e}")
 			break
 
@@ -67,7 +67,7 @@ def main() -> None:
 	try:
 		tx_socket: socket.socket = kiss_connect()
 		rx_socket: socket.socket = kiss_connect()
-	except Exception as e:
+	except OSError as e:
 		print(f"{MAGENTA}KISS connect failed:{RESET} {e}")
 		sys.exit(1)
 

@@ -43,6 +43,8 @@ ignore = [
 	"ERA",    # Allow commented-out code
 	"E501",   # Allow long lines
 	"COM812", # avoid formatter conflict warnings
+	"TD002",  # Author in TODO
+	"TD003",  # Issue link in TODO
 ]
 
 [tool.ruff.format]
