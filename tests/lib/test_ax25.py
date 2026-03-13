@@ -54,9 +54,18 @@ def test_build_kiss_frame_escapes_special_bytes() -> None:
 	# Command/port byte is the first byte of the inner frame; payload follows.
 	command_and_payload = inner[1:]
 
-	# No raw 0xC0 or 0xDB should appear in the escaped payload.
+	# No raw 0xC0 should appear in the escaped payload, and any 0xDB must be part of a
+	# valid 2-byte escape sequence (0xDC or 0xDD).
 	assert 0xC0 not in command_and_payload
-	assert 0xDB not in command_and_payload
+	i = 0
+	while i < len(command_and_payload):
+		if command_and_payload[i] == 0xDB:
+			# 0xDB must introduce a valid escape sequence and not be the last byte.
+			assert i + 1 < len(command_and_payload)
+			assert command_and_payload[i + 1] in (0xDC, 0xDD)
+			i += 2
+		else:
+			i += 1
 
 	# Escaped sequences for 0xC0 and 0xDB should be present.
 	assert b"\xDB\xDC" in command_and_payload  # Escaped 0xC0
