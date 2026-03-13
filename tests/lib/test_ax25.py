@@ -90,6 +90,37 @@ def test_kiss_round_trip_with_escaped_bytes() -> None:
 	assert text == payload.decode("utf-8", "replace")
 
 
+def test_decode_kiss_dangling_fesc_does_not_crash() -> None:
+	# Construct a KISS frame where the payload ends with a dangling 0xDB (FESC) byte.
+	# This exercises the unescape logic's handling of an unterminated escape sequence.
+	config = AX25Config("W1AW", 0, "K9JRR", 0)
+	builder = AX25FrameBuilder(config)
+
+	# KISS frame: 0xC0, command=0x00, data=[0xDB], 0xC0
+	kiss_frame = bytes([0xC0, 0x00, 0xDB, 0xC0])
+
+	res = builder.decode(kiss_frame)
+	# Decoder should not raise on malformed escape sequences and should return
+	# either None or a decoded tuple, but never some unexpected type.
+	assert res is None or isinstance(res, tuple)
+
+
+def test_decode_kiss_nonstandard_escape_sequence_does_not_crash() -> None:
+	# Construct a KISS frame containing a non-standard escape sequence: 0xDB followed
+	# by a byte other than 0xDC or 0xDD. This ensures the byte-walking loop in the
+	# unescape logic correctly handles unknown escape codes.
+	config = AX25Config("W1AW", 0, "K9JRR", 0)
+	builder = AX25FrameBuilder(config)
+
+	# KISS frame: 0xC0, command=0x00, data=[0xDB, 0x00], 0xC0
+	kiss_frame = bytes([0xC0, 0x00, 0xDB, 0x00, 0xC0])
+
+	res = builder.decode(kiss_frame)
+	# As with the dangling FESC case, the decoder should be robust against malformed
+	# escape sequences and return a sensible type instead of crashing.
+	assert res is None or isinstance(res, tuple)
+
+
 def test_decode_handles_non_zero_kiss_command() -> None:
 	# Build a normal KISS frame, then modify the command byte to be non-zero and ensure
 	# that decode can handle it without raising and with a sensible return type.
