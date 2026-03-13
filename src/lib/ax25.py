@@ -113,14 +113,19 @@ class AX25FrameBuilder:
 
 	def decode(self, frame_bytes: bytes) -> tuple[str, str, str] | None:
 		"""Takes in single whole kiss frames"""
-		# Unescape kiss frame
+		# Validate and strip KISS frame markers (FEND and command byte)
+		if not (len(frame_bytes) >= 3 and frame_bytes[0] == 0xC0 and frame_bytes[-1] == 0xC0):
+			return None
+		kiss_payload: bytes = frame_bytes[2:-1]
+
+		# Unescape KISS payload to recover raw AX.25 frame
 		ax_array: bytearray = bytearray()
 		i = 0
-		length: int = len(frame_bytes)
+		length: int = len(kiss_payload)
 		while i < length:
-			b: int = frame_bytes[i]
+			b: int = kiss_payload[i]
 			if b == 0xDB and i + 1 < length:
-				nxt: int = frame_bytes[i + 1]
+				nxt: int = kiss_payload[i + 1]
 				if nxt == 0xDC:
 					ax_array.append(0xC0)
 					i += 2
@@ -135,10 +140,6 @@ class AX25FrameBuilder:
 				ax_array.append(b)
 				i += 1
 		ax_frame: bytes = bytes(ax_array)
-
-		# Strip KISS frame markers if present (FEND and command byte)
-		if len(ax_frame) >= 3 and ax_frame[0] == 0xC0 and ax_frame[-1] == 0xC0:
-			ax_frame = ax_frame[2:-1]
 
 		# Minimal AX.25 length: two 7-byte addresses + CONTROL + PID = 16
 		if len(ax_frame) < 16:
