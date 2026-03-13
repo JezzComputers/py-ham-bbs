@@ -99,7 +99,7 @@ class AX25FrameBuilder:
 		return self.config.dest_frame + self.config.src_frame + self.control + self.pid + (compressed if len(compressed) < len(payload) else payload)
 
 	def build_kiss_frame(self, ax25_frame: bytes) -> bytes:
-		"""Add C000 ... C0 and excapes kiss frames"""
+		"""Add C000 ... C0 and escapes kiss frames"""
 		out: bytearray = bytearray(b"\xC0\x00")
 		for b in ax25_frame:
 			if b == 0xDB:
