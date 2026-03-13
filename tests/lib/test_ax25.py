@@ -100,9 +100,9 @@ def test_decode_kiss_dangling_fesc_does_not_crash() -> None:
 	kiss_frame = bytes([0xC0, 0x00, 0xDB, 0xC0])
 
 	res = builder.decode(kiss_frame)
-	# Decoder should not raise on malformed escape sequences and should return
-	# either None or a decoded tuple, but never some unexpected type.
-	assert res is None or isinstance(res, tuple)
+	# Decoder should not raise on malformed escape sequences and should reject this
+	# malformed frame rather than producing a decoded payload.
+	assert res is None
 
 
 def test_decode_kiss_nonstandard_escape_sequence_does_not_crash() -> None:
@@ -117,13 +117,13 @@ def test_decode_kiss_nonstandard_escape_sequence_does_not_crash() -> None:
 
 	res = builder.decode(kiss_frame)
 	# As with the dangling FESC case, the decoder should be robust against malformed
-	# escape sequences and return a sensible type instead of crashing.
-	assert res is None or isinstance(res, tuple)
+	# escape sequences and reject the frame instead of producing a decoded payload.
+	assert res is None
 
 
 def test_decode_handles_non_zero_kiss_command() -> None:
 	# Build a normal KISS frame, then modify the command byte to be non-zero and ensure
-	# that decode can handle it without raising and with a sensible return type.
+	# that decode can handle it without raising and correctly rejects non-data commands.
 	config = AX25Config("W1AW", 0, "K9JRR", 0)
 	builder = AX25FrameBuilder(config)
 	payload = b"OK"
@@ -140,9 +140,9 @@ def test_decode_handles_non_zero_kiss_command() -> None:
 	kiss_frame_non_zero = bytes(modified)
 
 	res = builder.decode(kiss_frame_non_zero)
-	# Implementation may choose to ignore non-data commands and return None, or still
-	# decode them; in either case, it should not raise and should return a sensible type.
-	assert res is None or isinstance(res, tuple)
+	# Non-zero KISS command bytes indicate non-data frames; the decoder should reject
+	# them and not attempt to produce a decoded payload.
+	assert res is None
 
 
 def test_kiss_round_trip_with_compressed_payload() -> None:
