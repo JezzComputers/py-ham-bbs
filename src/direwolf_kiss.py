@@ -37,22 +37,52 @@ def send_frame(tx_socket: socket.socket, text: str, builder: AX25FrameBuilder) -
 
 
 def listener(rx_socket: socket.socket, builder: AX25FrameBuilder) -> None:
+	buffer = bytearray()
+
 	while True:
 		try:
-			data: bytes = rx_socket.recv(4096)
-			if not data:
+			chunk: bytes = rx_socket.recv(4096)
+			if not chunk:
 				print(f"{MAGENTA}RX socket closed{RESET}")
 				break
 
-			print(f"\n{CYAN}[RX RAW]{RESET} {data.hex()}")
+			print(f"\n{CYAN}[RX RAW]{RESET} {chunk.hex()}")
 
-			# TODO: Make the listener wait for full kiss frames and sepperate multi frames
-			res = builder.decode(data)
-			if res is None:
-				print(f"{MAGENTA}[DECODED]{RESET} <invalid frame>")
-			else:
-				dest, src, text = res
-				print(f"{BLUE}[DECODED]{RESET} {src} → {dest} : {text}")
+			buffer.extend(chunk)
+
+			while True:
+				# Look for start and end markers
+				try:
+					start = buffer.index(0xC0)
+				except ValueError:
+					# No start marker at all → clear garbage
+					buffer.clear()
+					break
+
+				try:
+					end = buffer.index(0xC0, start + 1)
+				except ValueError:
+					# No end marker yet → wait for more data
+					break
+
+				# Extract full frame
+				frame: bytearray = buffer[start:end + 1]
+
+				# Remove it from buffer
+				del buffer[:end + 1]
+
+				# Skip empty frames like C000 C0
+				if len(frame) <= 3:
+					continue
+
+				print(f"{BLUE}[KISS FRAME]{RESET} {frame.hex()}")
+
+				res = builder.decode(bytes(frame))
+				if res is None:
+					print(f"{MAGENTA}[DECODED]{RESET} <invalid frame>")
+				else:
+					dest, src, text = res
+					print(f"{BLUE}[DECODED]{RESET} {src} → {dest} : {text}")
 
 			print(">>> ", end="", flush=True)
 
