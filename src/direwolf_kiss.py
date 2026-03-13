@@ -41,37 +41,38 @@ def listener(rx_socket: socket.socket, builder: AX25FrameBuilder) -> None:
 
 	while True:
 		try:
-			chunk: bytes = rx_socket.recv(4096)
+			chunk = rx_socket.recv(4096)
 			if not chunk:
 				print(f"{MAGENTA}RX socket closed{RESET}")
 				break
 
 			print(f"\n{CYAN}[RX RAW]{RESET} {chunk.hex()}")
-
 			buffer.extend(chunk)
 
 			while True:
-				# Look for start and end markers
+				# Find first FEND
 				try:
 					start = buffer.index(0xC0)
 				except ValueError:
-					# No start marker at all → clear garbage
+					# No FEND at all → drop everything
 					buffer.clear()
 					break
 
+				# Drop garbage before FEND
+				if start > 0:
+					del buffer[:start]
+
+				# Look for closing FEND
 				try:
-					end = buffer.index(0xC0, start + 1)
+					end = buffer.index(0xC0, 1)
 				except ValueError:
-					# No end marker yet → wait for more data
+					# No complete frame yet
 					break
 
 				# Extract full frame
-				frame: bytearray = buffer[start:end + 1]
-
-				# Remove it from buffer
+				frame = buffer[:end + 1]
 				del buffer[:end + 1]
 
-				# Skip empty frames like C000 C0
 				if len(frame) <= 3:
 					continue
 

@@ -137,7 +137,7 @@ class AX25FrameBuilder:
 		ax_frame: bytes = bytes(ax_array)
 
 		# Strip KISS frame markers if present (FEND and command byte)
-		if len(ax_frame) >= 3 and ax_frame[0] == 0xC0 and ax_frame[1] == 0x00 and ax_frame[-1] == 0xC0:
+		if len(ax_frame) >= 3 and ax_frame[0] == 0xC0 and ax_frame[-1] == 0xC0:
 			ax_frame = ax_frame[2:-1]
 
 		# Minimal AX.25 length: two 7-byte addresses + CONTROL + PID = 16
