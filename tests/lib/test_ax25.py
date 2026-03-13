@@ -86,8 +86,8 @@ def test_kiss_round_trip_with_escaped_bytes() -> None:
 
 	assert dest == "W1AW-0"
 	assert src == "K9JRR-0"
-	# Decode using latin-1 so that all byte values round-trip directly to Unicode.
-	assert text == payload.decode("latin-1")
+	# decode() uses UTF-8 with errors="replace", so compute the expected text accordingly.
+	assert text == payload.decode("utf-8", "replace")
 
 
 def test_decode_handles_non_zero_kiss_command() -> None:
