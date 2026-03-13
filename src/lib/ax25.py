@@ -165,9 +165,6 @@ class AX25FrameBuilder:
 		dest: str = decode_call(dest_raw)
 		src: str = decode_call(src_raw)
 
-		try:
-			text: str = payload_data.decode(encoding="utf-8", errors="replace")
-		except (AttributeError, TypeError, LookupError) as e:
-			text = f"<not utf-8 encoded payload: {e}>"
+		text: str = payload_data.decode(encoding="utf-8", errors="replace")
 
 		return dest, src, text
