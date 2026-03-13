@@ -112,3 +112,24 @@ def test_decode_handles_non_zero_kiss_command() -> None:
 	# Implementation may choose to ignore non-data commands and return None, or still
 	# decode them; in either case, it should not raise and should return a sensible type.
 	assert res is None or isinstance(res, tuple)
+
+
+def test_kiss_round_trip_with_compressed_payload() -> None:
+	# Use a highly repetitive and sufficiently large payload to encourage compression in
+	# build_ax25_frame(), then verify that decode() correctly reconstructs the original
+	# message after a full AX.25 + KISS round trip.
+	config = AX25Config("W1AW", 0, "K9JRR", 0)
+	builder = AX25FrameBuilder(config)
+	# Large, repetitive payload should be attractive to typical compressors.
+	payload = b"A" * 10000
+	ax25_frame = builder.build_ax25_frame(payload)
+	kiss_frame = builder.build_kiss_frame(ax25_frame)
+
+	res = builder.decode(kiss_frame)
+	assert res is not None
+	dest, src, text = res
+
+	assert dest == "W1AW-0"
+	assert src == "K9JRR-0"
+	# decode() uses UTF-8 with errors="replace"; ASCII payload should round-trip exactly.
+	assert text == payload.decode("utf-8", "replace")
