@@ -114,8 +114,9 @@ class AX25FrameBuilder:
 	def decode(self, frame_bytes: bytes) -> tuple[str, str, str] | None:
 		"""Takes in single whole kiss frames"""
 		# Validate and strip KISS frame markers (FEND and command byte)
-		if not (len(frame_bytes) >= 3 and frame_bytes[0] == 0xC0 and frame_bytes[-1] == 0xC0):
+		if not (len(frame_bytes) >= 3 and frame_bytes[0] == 0xC0 and frame_bytes[-1] == 0xC0) or (frame_bytes[1] != 0x00):
 			return None
+
 		kiss_payload: bytes = frame_bytes[2:-1]
 
 		# Unescape KISS payload to recover raw AX.25 frame
