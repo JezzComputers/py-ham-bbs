@@ -99,7 +99,7 @@ class AX25FrameBuilder:
 		return self.config.dest_frame + self.config.src_frame + self.control + self.pid + (compressed if len(compressed) < len(payload) else payload)
 
 	def build_kiss_frame(self, ax25_frame: bytes) -> bytes:
-		"""Add C000 ... C0 and escapes kiss frames"""
+		"""Add KISS framing and escapes"""
 		out: bytearray = bytearray(b"\xC0\x00")
 		for b in ax25_frame:
 			if b == 0xDB:
@@ -111,13 +111,9 @@ class AX25FrameBuilder:
 		out.append(0xC0)
 		return bytes(out)
 
-	def decode(self, frame_bytes: bytes) -> tuple[str, str, str] | None:
-		"""Takes in single whole kiss frames"""
-		# Validate and strip KISS frame markers (FEND and command byte)
-		if not (len(frame_bytes) >= 3 and frame_bytes[0] == 0xC0 and frame_bytes[-1] == 0xC0) or (frame_bytes[1] != 0x00):
-			return None
-
-		kiss_payload: bytes = frame_bytes[2:-1]
+	def decode_kiss_frame(self, kiss_frame: bytes) -> bytes:
+		"""Remove KISS framing and unescape"""
+		kiss_payload: bytes = kiss_frame[2:-1]
 
 		# Unescape KISS payload to recover raw AX.25 frame
 		ax_array: bytearray = bytearray()
@@ -140,7 +136,15 @@ class AX25FrameBuilder:
 			else:
 				ax_array.append(b)
 				i += 1
-		ax_frame: bytes = bytes(ax_array)
+		return bytes(ax_array)
+
+	def decode(self, frame_bytes: bytes) -> tuple[str, str, str] | None:
+		"""Takes in single whole kiss frames"""
+		# Validate and strip KISS frame markers (FEND and command byte)
+		if not (len(frame_bytes) >= 3 and frame_bytes[0] == 0xC0 and frame_bytes[-1] == 0xC0) or (frame_bytes[1] != 0x00):
+			return None
+
+		ax_frame = self.decode_kiss_frame(frame_bytes)
 
 		# Minimal AX.25 length: two 7-byte addresses + CONTROL + PID = 16
 		if len(ax_frame) < 16:
@@ -170,3 +174,4 @@ class AX25FrameBuilder:
 		text: str = payload_data.decode(encoding="utf-8", errors="replace")
 
 		return dest, src, text
+
