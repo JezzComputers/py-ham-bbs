@@ -11,7 +11,12 @@ dependencies = []
 
 # Install with uv sync --upgrade --all-groups
 [dependency-groups]
-dev = ["pyright", "pytest", "ruff"]
+dev = [
+	"pyright",
+	"pytest",
+	"ruff",
+	"snakeviz",
+]
 
 [tool.pytest.ini_options]
 minversion = "9.0"
