@@ -1,9 +1,6 @@
 import zlib
 from warnings import warn
 
-from lib.terminal import use_color
-
-use_color()
 
 def is_valid_callsign(call: str) -> bool:
 	return call.isalnum() and call.isupper() and 1 <= len(call) <= 6
@@ -118,7 +115,7 @@ class FrameBuilder:
 	def decode_kiss_frame(self, kiss_frame: bytes) -> bytes | None:
 		"""Remove KISS framing and unescape"""
 		# Validate KISS frame markers (FEND and command byte)
-		if len(kiss_frame) <= 3 or kiss_frame[0] != 0xC0 or kiss_frame[1] or kiss_frame[1] != 0x00 or kiss_frame[-1] != 0xC0:
+		if len(kiss_frame) <= 3 or kiss_frame[0] != 0xC0 or kiss_frame[1] != 0x00 or kiss_frame[-1] != 0xC0:
 			if kiss_frame[1] != 0x00:
 				warn(f"Unsupported KISS command byte: {kiss_frame[1]:02X}", category=FutureWarning)
 			else:
