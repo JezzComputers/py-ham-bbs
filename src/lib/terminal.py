@@ -13,26 +13,28 @@ Example:
 import warnings
 from collections.abc import Callable
 
-# ANSI terminal colours
+# Standard 8 colors
+BLACK = "\033[30m"
 RED = "\033[31m"
-YELLOW = "\033[33m"
 GREEN = "\033[32m"
-CYAN = "\033[36m"
+YELLOW = "\033[33m"
 BLUE = "\033[34m"
 MAGENTA = "\033[35m"
-RESET = "\033[0m"
+CYAN = "\033[36m"
+WHITE = "\033[37m"
 
-__all__ = [
-	"BLUE",
-	"CYAN",
-	"GREEN",
-	"MAGENTA",
-	"RED",
-	"RESET",
-	"YELLOW",
-	"colored_formatwarning",
-	"use_color",
-]
+# Bright (high-intensity) colors
+BRIGHT_BLACK = "\033[90m"
+BRIGHT_RED = "\033[91m"
+BRIGHT_GREEN = "\033[92m"
+BRIGHT_YELLOW = "\033[93m"
+BRIGHT_BLUE = "\033[94m"
+BRIGHT_MAGENTA = "\033[95m"
+BRIGHT_CYAN = "\033[96m"
+BRIGHT_WHITE = "\033[97m"
+
+# Reset
+RESET = "\033[0m"
 
 
 def _color_for(category: type[Warning]) -> str:
@@ -47,11 +49,15 @@ def _color_for(category: type[Warning]) -> str:
 	"""
 	try:
 		if issubclass(category, UserWarning):
-			return YELLOW
-		if issubclass(category, RuntimeWarning):
-			return RED
+			return BRIGHT_YELLOW
 		if issubclass(category, DeprecationWarning):
-			return MAGENTA
+			return BRIGHT_MAGENTA
+		if issubclass(category, RuntimeWarning):
+			return BRIGHT_RED
+		if issubclass(category, SyntaxWarning):
+			return BRIGHT_BLUE
+		if issubclass(category, FutureWarning):
+			return BRIGHT_GREEN
 	except TypeError:
 		# If `category` is not a class, fall back to default colour.
 		return CYAN
@@ -97,3 +103,23 @@ def use_color() -> None:
 	coloured formatter defined in :func:`colored_formatwarning`.
 	"""
 	warnings.formatwarning = colored_formatwarning
+
+if __name__ == "__main__":
+	print(
+		f"{BLACK}██{RESET} BLACK\n"
+		f"{RED}██{RESET} RED\n"
+		f"{GREEN}██{RESET} GREEN\n"
+		f"{YELLOW}██{RESET} YELLOW\n"
+		f"{BLUE}██{RESET} BLUE\n"
+		f"{MAGENTA}██{RESET} MAGENTA\n"
+		f"{CYAN}██{RESET} CYAN\n"
+		f"{WHITE}██{RESET} WHITE\n"
+		f"{BRIGHT_BLACK}██{RESET} BRIGHT_BLACK\n"
+		f"{BRIGHT_RED}██{RESET} BRIGHT_RED\n"
+		f"{BRIGHT_GREEN}██{RESET} BRIGHT_GREEN\n"
+		f"{BRIGHT_YELLOW}██{RESET} BRIGHT_YELLOW\n"
+		f"{BRIGHT_BLUE}██{RESET} BRIGHT_BLUE\n"
+		f"{BRIGHT_MAGENTA}██{RESET} BRIGHT_MAGENTA\n"
+		f"{BRIGHT_CYAN}██{RESET} BRIGHT_CYAN\n"
+		f"{BRIGHT_WHITE}██{RESET} BRIGHT_WHITE"
+	)

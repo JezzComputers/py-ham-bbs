@@ -5,7 +5,7 @@ AX.25 (ax25.py)
 -------------------------------
 
 This file lists common AX.25 CONTROL and PID byte values referenced by
-the `AX25FrameBuilder` in this library.
+the `FrameBuilder` in this library.
 
 | Field | Hex | Decimal | Meaning/Notes |
 | ----- | ---: | -------: | --------------- |

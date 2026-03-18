@@ -7,8 +7,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from lib.ax25 import (
-	AX25Config,
-	AX25FrameBuilder,
+	FrameBuilder,
+	FrameConfig,
 )
 from lib.terminal import (
 	BLUE,
@@ -26,7 +26,7 @@ def kiss_connect(host: str = "127.0.0.1", port: int = 8001) -> socket.socket:
 	return s
 
 
-def send_frame(tx_socket: socket.socket, text: str, builder: AX25FrameBuilder) -> None:
+def send_frame(tx_socket: socket.socket, text: str, builder: FrameBuilder) -> None:
 	"""Build a KISS frame from `text` and send it to Direwolf."""
 	payload: bytes = text.encode("utf-8")
 	frame: bytes = builder.build_ax25_frame(payload)
@@ -36,7 +36,7 @@ def send_frame(tx_socket: socket.socket, text: str, builder: AX25FrameBuilder) -
 	print(f"{GREEN}[TX]{RESET} {text}")
 
 
-def listener(rx_socket: socket.socket, builder: AX25FrameBuilder) -> None:
+def listener(rx_socket: socket.socket, builder: FrameBuilder) -> None:
 	buffer = bytearray()
 
 	while True:
@@ -78,7 +78,7 @@ def listener(rx_socket: socket.socket, builder: AX25FrameBuilder) -> None:
 
 				print(f"{BLUE}[KISS FRAME]{RESET} {frame.hex()}")
 
-				res = builder.decode(bytes(frame))
+				res = builder.decode_kiss_frame(bytes(frame))
 				if res is None:
 					print(f"{MAGENTA}[DECODED]{RESET} <invalid frame>")
 				else:
@@ -103,8 +103,8 @@ def main() -> None:
 		sys.exit(1)
 
 	# Configure addresses here
-	config = AX25Config("VK3ETH", 0, "VK3JEZ", 0)
-	builder = AX25FrameBuilder(config)
+	config = FrameConfig("VK3ETH", 0, "VK3JEZ", 0)
+	builder = FrameBuilder(config)
 
 	threading.Thread(target=listener, args=(rx_socket, builder), daemon=True).start()
 

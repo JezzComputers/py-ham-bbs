@@ -1,5 +1,9 @@
 import zlib
+from warnings import warn
 
+from lib.terminal import use_color
+
+use_color()
 
 def ax25_call(callsign: str, ssid: int = 0, last: bool = False) -> bytes:
 	"""Truncate to 6 chars then pad to ensure exactly 6-character callsign"""
@@ -23,7 +27,7 @@ def parse_ax25_addresses(frame: bytes) -> tuple[list[bytes], int]:
 	while True:
 		if idx + 7 > len(frame):
 			raise ValueError("truncated AX.25 address field")
-		addr: bytes = frame[idx : idx + 7]
+		addr: bytes = frame[idx:idx + 7]
 		addresses.append(addr)
 		idx += 7
 		if addr[6] & 0x01:
@@ -31,7 +35,7 @@ def parse_ax25_addresses(frame: bytes) -> tuple[list[bytes], int]:
 	return addresses, idx
 
 
-class AX25Config:
+class FrameConfig:
 	def __init__(self, dest_call: str, dest_ssid: int, src_call: str, src_ssid: int) -> None:
 		self._dest_call: str = dest_call
 		self._dest_ssid: int = dest_ssid
@@ -88,19 +92,16 @@ class AX25Config:
 		return self._src_frame
 
 
-class AX25FrameBuilder:
-	def __init__(self, config: AX25Config, control: bytes = b"\x03", pid: bytes = b"\x01") -> None:
-		self.config: AX25Config = config
-		self.control: bytes = control
-		self.pid: bytes = pid
-
-	def build_ax25_frame(self, payload: bytes) -> bytes:
-		compressed: bytes = zlib.compress(payload, level=9, wbits=15)
-		return self.config.dest_frame + self.config.src_frame + self.control + self.pid + (compressed if len(compressed) < len(payload) else payload)
+class FrameBuilder:
+	def __init__(self, config: FrameConfig, ax25_control: bytes = b"\x03", ax25_pid: bytes = b"\x01", kiss_command: bytes = b"\x00") -> None:
+		self.config: FrameConfig = config
+		self.control: bytes = ax25_control
+		self.pid: bytes = ax25_pid
+		self.kiss_command: bytes = kiss_command
 
 	def build_kiss_frame(self, ax25_frame: bytes) -> bytes:
-		"""Add KISS framing and escapes"""
-		out: bytearray = bytearray(b"\xC0\x00")
+		"""Takes AX25 frame and adds KISS framing and escapes"""
+		out: bytearray = bytearray(b"\xC0" + self.kiss_command)
 		for b in ax25_frame:
 			if b == 0xDB:
 				out.extend(b"\xDB\xDD")
@@ -111,8 +112,16 @@ class AX25FrameBuilder:
 		out.append(0xC0)
 		return bytes(out)
 
-	def decode_kiss_frame(self, kiss_frame: bytes) -> bytes:
+	def decode_kiss_frame(self, kiss_frame: bytes) -> bytes | None:
 		"""Remove KISS framing and unescape"""
+		# Validate KISS frame markers (FEND and command byte)
+		if len(kiss_frame) <= 3 or kiss_frame[0] != 0xC0 or kiss_frame[1] or kiss_frame[1] != 0x00 or kiss_frame[-1] != 0xC0:
+			if kiss_frame[1] != 0x00:
+				warn(f"Unsupported KISS command byte: {kiss_frame[1]:02X}", category=FutureWarning)
+			else:
+				warn(f"Invalid KISS frame: {kiss_frame.hex()}", category=UserWarning)
+			return None
+
 		kiss_payload: bytes = kiss_frame[2:-1]
 
 		# Unescape KISS payload to recover raw AX.25 frame
@@ -138,20 +147,19 @@ class AX25FrameBuilder:
 				i += 1
 		return bytes(ax_array)
 
-	def decode(self, frame_bytes: bytes) -> tuple[str, str, str] | None:
-		"""Takes in single whole kiss frames"""
-		# Validate and strip KISS frame markers (FEND and command byte)
-		if not (len(frame_bytes) >= 3 and frame_bytes[0] == 0xC0 and frame_bytes[-1] == 0xC0) or (frame_bytes[1] != 0x00):
-			return None
+	def build_ax25_frame(self, payload: bytes) -> bytes:
+		compressed: bytes = zlib.compress(payload, level=9, wbits=15)
+		return self.config.dest_frame + self.config.src_frame + self.control + self.pid + (compressed if len(compressed) < len(payload) else payload)
 
-		ax_frame = self.decode_kiss_frame(frame_bytes)
+	def decode_ax25_frame(self, ax25_frame: bytes) -> tuple[str, str, str] | None:
+		"""Takes in a single whole AX25 frame"""
 
 		# Minimal AX.25 length: two 7-byte addresses + CONTROL + PID = 16
-		if len(ax_frame) < 16:
+		if len(ax25_frame) < 16:
 			return None
 
 		try:
-			addresses, idx = parse_ax25_addresses(ax_frame)
+			addresses, idx = parse_ax25_addresses(ax25_frame)
 		except ValueError:
 			return None
 		if len(addresses) < 2:
@@ -159,9 +167,9 @@ class AX25FrameBuilder:
 		dest_raw: bytes = addresses[0]
 		src_raw: bytes = addresses[1]
 		# Require at least CONTROL and PID bytes after the addresses.
-		if len(ax_frame) < idx + 2:
+		if len(ax25_frame) < idx + 2:
 			return None
-		payload: bytes = ax_frame[idx + 2 :]
+		payload: bytes = ax25_frame[idx + 2:]
 
 		try:
 			payload_data: bytes = zlib.decompress(payload, wbits=15)
