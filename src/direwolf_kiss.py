@@ -9,9 +9,13 @@ sys.path.insert(0, str(Path(__file__).parent))
 from lib.ax25 import (
 	FrameBuilder,
 	FrameConfig,
+	is_valid_callsign,
 )
 from lib.terminal import (
 	BLUE,
+	BRIGHT_BLACK,
+	BRIGHT_RED,
+	BRIGHT_YELLOW,
 	CYAN,
 	GREEN,
 	MAGENTA,
@@ -26,22 +30,22 @@ def kiss_connect(host: str = "127.0.0.1", port: int = 8001) -> socket.socket:
 	return s
 
 
-def send_frame(tx_socket: socket.socket, text: str, builder: FrameBuilder) -> None:
+def send_frame(sock: socket.socket, text: str, builder: FrameBuilder) -> None:
 	"""Build a KISS frame from `text` and send it to Direwolf."""
 	payload: bytes = text.encode("utf-8")
 	frame: bytes = builder.build_ax25_frame(payload)
 	kiss_frame: bytes = builder.build_kiss_frame(frame)
 
-	tx_socket.sendall(kiss_frame)
+	sock.sendall(kiss_frame)
 	print(f"{GREEN}[TX]{RESET} {text}")
 
 
-def listener(rx_socket: socket.socket, builder: FrameBuilder) -> None:
+def listener(sock: socket.socket, builder: FrameBuilder) -> None:
 	buffer = bytearray()
 
 	while True:
 		try:
-			chunk = rx_socket.recv(4096)
+			chunk = sock.recv(4096)
 			if not chunk:
 				print(f"{MAGENTA}RX socket closed{RESET}")
 				break
@@ -96,26 +100,42 @@ def main() -> None:
 	use_color()
 
 	try:
-		tx_socket: socket.socket = kiss_connect()
-		rx_socket: socket.socket = kiss_connect()
+		direwolf_socket: socket.socket = kiss_connect()
 	except OSError as e:
 		print(f"{MAGENTA}KISS connect failed:{RESET} {e}")
 		sys.exit(1)
 
-	# Configure addresses here
-	config = FrameConfig("VK3ETH", 0, "VK3JEZ", 0)
+	while True:
+		conf_msg: list[str] = input(f"{BRIGHT_BLACK}ENTER: DESTCALL SRCCALL\nENTER:{RESET} ").upper().split()
+		if len(conf_msg) == 2 and all(is_valid_callsign(c) for c in conf_msg):
+			break
+		print(f"{BRIGHT_RED}Invalid response.{RESET}")
+
+	config = FrameConfig(f"{conf_msg[0]:6.6s}", 0, f"{conf_msg[1]:6.6s}", 0)
 	builder = FrameBuilder(config)
 
-	threading.Thread(target=listener, args=(rx_socket, builder), daemon=True).start()
+	threading.Thread(target=listener, args=(direwolf_socket, builder), daemon=True).start()
 
-	print(f"{GREEN}KISS console ready (PTT handled by Direwolf).{RESET}")
-	print("Type messages and press Enter.\n")
+	print(f"{GREEN}KISS console ready.{RESET}\n{BRIGHT_BLACK}To show addresses, type /SHOW\nTo change addresses, type /ADDR DESTCALL SRCCALL{RESET}")
 
 	while True:
 		try:
-			msg = input(">>> ")
-			if msg.strip():
-				send_frame(tx_socket, msg, builder)
+			msg: str = input(">>> ")
+			if msg.strip().upper().startswith("/ADDR"):
+				parts: list[str] = msg.upper().split()
+				if len(parts) == 3:
+					dest, src = parts[1], parts[2]
+					if not (is_valid_callsign(dest) and is_valid_callsign(src)):
+						print(f"{BRIGHT_RED}Invalid callsign in command. Callsigns must be 1-6 characters, uppercase letters and digits only.{RESET}")
+						continue
+					builder.config = FrameConfig(f"{dest:6.6s}", 0, f"{src:6.6s}", 0)
+					print(f"{BRIGHT_YELLOW}Updated addresses:{RESET} DEST={dest}, SRC={src}")
+				else:
+					print(f"{BRIGHT_BLACK}Usage: /ADDR DESTCALL SRCCALL{RESET}")
+			elif msg.strip().upper() == "/SHOW":
+				print(f"{BRIGHT_YELLOW}DEST={RESET}{builder.config.dest_call}{BRIGHT_YELLOW} SRC={RESET}{builder.config.src_call}")
+			elif msg.strip():
+				send_frame(direwolf_socket, msg, builder)
 		except KeyboardInterrupt:
 			print("\nExiting.")
 			sys.exit(0)

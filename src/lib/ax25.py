@@ -5,6 +5,9 @@ from lib.terminal import use_color
 
 use_color()
 
+def is_valid_callsign(call: str) -> bool:
+	return call.isalnum() and call.isupper() and 1 <= len(call) <= 6
+
 def ax25_call(callsign: str, ssid: int = 0, last: bool = False) -> bytes:
 	"""Truncate to 6 chars then pad to ensure exactly 6-character callsign"""
 	_callsign: str = callsign.upper()[:6].ljust(6)
@@ -37,9 +40,9 @@ def parse_ax25_addresses(frame: bytes) -> tuple[list[bytes], int]:
 
 class FrameConfig:
 	def __init__(self, dest_call: str, dest_ssid: int, src_call: str, src_ssid: int) -> None:
-		self._dest_call: str = dest_call
+		self._dest_call: str = dest_call.upper()
 		self._dest_ssid: int = dest_ssid
-		self._src_call: str = src_call
+		self._src_call: str = src_call.upper()
 		self._src_ssid: int = src_ssid
 		self._dest_frame: bytes = ax25_call(self._dest_call, self._dest_ssid)
 		self._src_frame: bytes = ax25_call(self._src_call, self._src_ssid, last=True)
@@ -51,7 +54,7 @@ class FrameConfig:
 
 	@dest_call.setter
 	def dest_call(self, value: str) -> None:
-		self._dest_call = value
+		self._dest_call = value.upper()
 		self._dest_frame = ax25_call(self._dest_call, self._dest_ssid)
 
 	@property
@@ -70,7 +73,7 @@ class FrameConfig:
 
 	@src_call.setter
 	def src_call(self, value: str) -> None:
-		self._src_call = value
+		self._src_call = value.upper()
 		self._src_frame = ax25_call(self._src_call, self._src_ssid, last=True)
 
 	@property
