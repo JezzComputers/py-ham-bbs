@@ -11,7 +11,7 @@ from lib.ax25 import (
 	AX25FrameConfig,
 	is_valid_callsign,
 )
-from lib.kiss import KISSFrameBuilder, KISSFrameConfig
+from lib.kiss import InvalidKISSError, KISSFrameBuilder, KISSFrameConfig
 from lib.terminal import (
 	BLUE,
 	BRIGHT_BLACK,
@@ -31,17 +31,16 @@ def kiss_connect(host: str = "127.0.0.1", port: int = 8001) -> socket.socket:
 	return s
 
 
-def send_frame(sock: socket.socket, text: str, builder: AX25FrameBuilder) -> None:
-	"""Build a KISS frame from `text` and send it to Direwolf."""
+def send_frame(sock: socket.socket, text: str, ax25_builder: AX25FrameBuilder, kiss_builder: KISSFrameBuilder) -> None:
+	"""Build a KISS frame from `text` then add AX.25 and send it to Direwolf."""
 	payload: bytes = text.encode("utf-8")
-	frame: bytes = builder.build_ax25_frame(payload)
-	kiss_frame: bytes = builder.build_kiss_frame(frame)
-
+	frame: bytes = ax25_builder.build_ax25_frame(payload)
+	kiss_frame: bytes = kiss_builder.build_kiss_frame(frame)
 	sock.sendall(kiss_frame)
 	print(f"{GREEN}[TX]{RESET} {text}")
 
 
-def listener(sock: socket.socket, builder: AX25FrameBuilder) -> None:
+def listener(sock: socket.socket, kiss_builder: KISSFrameBuilder, ax25_builder: AX25FrameBuilder) -> None:
 	buffer = bytearray()
 
 	while True:
@@ -83,7 +82,18 @@ def listener(sock: socket.socket, builder: AX25FrameBuilder) -> None:
 
 				print(f"{BLUE}[KISS FRAME]{RESET} {frame.hex()}")
 
-				res = builder.decode_kiss_frame(bytes(frame))
+				try:
+					ax25_frame: bytes = kiss_builder.decode_kiss_frame(bytes(frame))
+					res: tuple[str, str, str] | None = ax25_builder.decode_ax25_frame(ax25_frame)
+
+				except InvalidKISSError as e:
+					print(f"{MAGENTA}[DECODED]{RESET} <invalid KISS frame: {e}>")
+					continue
+
+				except Exception as e:
+					print(f"{MAGENTA}[DECODED]{RESET} <invalid AX.25 frame: {e}>")
+					continue
+
 				if res is None:
 					print(f"{MAGENTA}[DECODED]{RESET} <invalid frame>")
 				else:
@@ -112,10 +122,12 @@ def main() -> None:
 			break
 		print(f"{BRIGHT_RED}Invalid response.{RESET}")
 
-	config = AX25FrameConfig(f"{conf_msg[0]:6.6s}", 0, f"{conf_msg[1]:6.6s}", 0)
-	builder = AX25FrameBuilder(config)
+	ax25_config = AX25FrameConfig(f"{conf_msg[0]:6.6s}", 0, f"{conf_msg[1]:6.6s}", 0)
+	ax25_builder = AX25FrameBuilder(ax25_config)
+	kiss_config = KISSFrameConfig(b"\x00")
+	kiss_builder = KISSFrameBuilder(kiss_config)
 
-	threading.Thread(target=listener, args=(direwolf_socket, builder), daemon=True).start()
+	threading.Thread(target=listener, args=(direwolf_socket, kiss_builder, ax25_builder), daemon=True).start()
 
 	print(f"{GREEN}KISS console ready.{RESET}\n{BRIGHT_BLACK}To show addresses, type /SHOW\nTo change addresses, type /ADDR DESTCALL SRCCALL{RESET}")
 
@@ -127,16 +139,16 @@ def main() -> None:
 				if len(parts) == 3:
 					dest, src = parts[1], parts[2]
 					if not (is_valid_callsign(dest) and is_valid_callsign(src)):
-						print(f"{BRIGHT_RED}Invalid callsign in command. Callsigns must be 1-6 characters, uppercase letters and digits only.{RESET}")
+						print(f"{BRIGHT_RED}Invalid callsign in command. Callsigns must be 1-6 characters, letters and numbers only.{RESET}")
 						continue
-					builder.config = AX25FrameConfig(f"{dest:6.6s}", 0, f"{src:6.6s}", 0)
+					ax25_builder.config = AX25FrameConfig(f"{dest:6.6s}", 0, f"{src:6.6s}", 0)
 					print(f"{BRIGHT_YELLOW}Updated addresses:{RESET} DEST={dest}, SRC={src}")
 				else:
 					print(f"{BRIGHT_BLACK}Usage: /ADDR DESTCALL SRCCALL{RESET}")
 			elif msg.strip().upper() == "/SHOW":
-				print(f"{BRIGHT_YELLOW}DEST={RESET}{builder.config.dest_call}{BRIGHT_YELLOW} SRC={RESET}{builder.config.src_call}")
+				print(f"{BRIGHT_YELLOW}DEST={RESET}{ax25_builder.config.dest_call}{BRIGHT_YELLOW} SRC={RESET}{ax25_builder.config.src_call}")
 			elif msg.strip():
-				send_frame(direwolf_socket, msg, builder)
+				send_frame(direwolf_socket, msg, ax25_builder, kiss_builder)
 		except KeyboardInterrupt:
 			print("\nExiting.")
 			sys.exit(0)

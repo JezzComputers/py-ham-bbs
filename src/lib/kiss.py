@@ -19,9 +19,9 @@ class KISSFrameBuilder:
 	def __init__(self, config: KISSFrameConfig) -> None:
 		self._config: KISSFrameConfig = config
 
-	def build_kiss_frame(self, kiss_config: KISSFrameConfig, ax25_frame: bytes) -> bytes:
+	def build_kiss_frame(self, ax25_frame: bytes) -> bytes:
 		"""Takes AX.25 frame and adds KISS framing and escapes"""
-		out: bytearray = bytearray(b"\xC0" + kiss_config.kiss_command)
+		out: bytearray = bytearray(b"\xC0" + self._config.kiss_command)
 		for b in ax25_frame:
 			if b == 0xDB:
 				out.extend(b"\xDB\xDD")
