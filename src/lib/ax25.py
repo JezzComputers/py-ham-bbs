@@ -1,9 +1,10 @@
+import re
 import zlib
-from warnings import warn
 
 
 def is_valid_callsign(call: str) -> bool:
-	return call.isalnum() and call.isupper() and 1 <= len(call) <= 6
+	return re.search(r"^[A-Z]{1,2}[0-9][A-Z]{1,3}$", call.upper()) is not None
+
 
 def ax25_call(callsign: str, ssid: int = 0, last: bool = False) -> bytes:
 	"""Truncate to 6 chars then pad to ensure exactly 6-character callsign"""
@@ -27,7 +28,7 @@ def parse_ax25_addresses(frame: bytes) -> tuple[list[bytes], int]:
 	while True:
 		if idx + 7 > len(frame):
 			raise ValueError("truncated AX.25 address field")
-		addr: bytes = frame[idx:idx + 7]
+		addr: bytes = frame[idx : idx + 7]
 		addresses.append(addr)
 		idx += 7
 		if addr[6] & 0x01:
@@ -35,7 +36,12 @@ def parse_ax25_addresses(frame: bytes) -> tuple[list[bytes], int]:
 	return addresses, idx
 
 
-class FrameConfig:
+class AX25FrameConfig:
+	"""
+	Represents the configuration for an AX.25 frame, managing destination
+	and source callsigns and SSIDs, and providing their encoded frame
+	representations as bytes.
+	"""
 	def __init__(self, dest_call: str, dest_ssid: int, src_call: str, src_ssid: int) -> None:
 		self._dest_call: str = dest_call.upper()
 		self._dest_ssid: int = dest_ssid
@@ -92,60 +98,16 @@ class FrameConfig:
 		return self._src_frame
 
 
-class FrameBuilder:
-	def __init__(self, config: FrameConfig, ax25_control: bytes = b"\x03", ax25_pid: bytes = b"\x01", kiss_command: bytes = b"\x00") -> None:
-		self.config: FrameConfig = config
+class AX25FrameBuilder:
+	"""
+	Builds and decodes AX.25 protocol frames, automatically handling payload
+	compression and extraction of source, destination, and message text from
+	frames.
+	"""
+	def __init__(self, config: AX25FrameConfig, ax25_control: bytes = b"\x03", ax25_pid: bytes = b"\x01") -> None:
+		self.config: AX25FrameConfig = config
 		self.control: bytes = ax25_control
 		self.pid: bytes = ax25_pid
-		self.kiss_command: bytes = kiss_command
-
-	def build_kiss_frame(self, ax25_frame: bytes) -> bytes:
-		"""Takes AX25 frame and adds KISS framing and escapes"""
-		out: bytearray = bytearray(b"\xC0" + self.kiss_command)
-		for b in ax25_frame:
-			if b == 0xDB:
-				out.extend(b"\xDB\xDD")
-			elif b == 0xC0:
-				out.extend(b"\xDB\xDC")
-			else:
-				out.append(b)
-		out.append(0xC0)
-		return bytes(out)
-
-	def decode_kiss_frame(self, kiss_frame: bytes) -> bytes | None:
-		"""Remove KISS framing and unescape"""
-		# Validate KISS frame markers (FEND and command byte)
-		if len(kiss_frame) <= 3 or kiss_frame[0] != 0xC0 or kiss_frame[1] != 0x00 or kiss_frame[-1] != 0xC0:
-			if kiss_frame[1] != 0x00:
-				warn(f"Unsupported KISS command byte: {kiss_frame[1]:02X}", category=FutureWarning)
-			else:
-				warn(f"Invalid KISS frame: {kiss_frame.hex()}", category=UserWarning)
-			return None
-
-		kiss_payload: bytes = kiss_frame[2:-1]
-
-		# Unescape KISS payload to recover raw AX.25 frame
-		ax_array: bytearray = bytearray()
-		i = 0
-		length: int = len(kiss_payload)
-		while i < length:
-			b: int = kiss_payload[i]
-			if b == 0xDB and i + 1 < length:
-				nxt: int = kiss_payload[i + 1]
-				if nxt == 0xDC:
-					ax_array.append(0xC0)
-					i += 2
-					continue
-				if nxt == 0xDD:
-					ax_array.append(0xDB)
-					i += 2
-					continue
-				ax_array.append(b)
-				i += 1
-			else:
-				ax_array.append(b)
-				i += 1
-		return bytes(ax_array)
 
 	def build_ax25_frame(self, payload: bytes) -> bytes:
 		compressed: bytes = zlib.compress(payload, level=9, wbits=15)
@@ -169,7 +131,7 @@ class FrameBuilder:
 		# Require at least CONTROL and PID bytes after the addresses.
 		if len(ax25_frame) < idx + 2:
 			return None
-		payload: bytes = ax25_frame[idx + 2:]
+		payload: bytes = ax25_frame[idx + 2 :]
 
 		try:
 			payload_data: bytes = zlib.decompress(payload, wbits=15)

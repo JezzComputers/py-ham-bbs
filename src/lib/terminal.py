@@ -104,6 +104,7 @@ def use_color() -> None:
 	"""
 	warnings.formatwarning = colored_formatwarning
 
+
 if __name__ == "__main__":
 	print(
 f"""{BLACK}██{RESET} BLACK

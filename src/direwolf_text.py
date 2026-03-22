@@ -7,10 +7,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from lib.ax25 import (
-	FrameBuilder,
-	FrameConfig,
+	AX25FrameBuilder,
+	AX25FrameConfig,
 	is_valid_callsign,
 )
+from lib.kiss import KISSFrameBuilder, KISSFrameConfig
 from lib.terminal import (
 	BLUE,
 	BRIGHT_BLACK,
@@ -30,7 +31,7 @@ def kiss_connect(host: str = "127.0.0.1", port: int = 8001) -> socket.socket:
 	return s
 
 
-def send_frame(sock: socket.socket, text: str, builder: FrameBuilder) -> None:
+def send_frame(sock: socket.socket, text: str, builder: AX25FrameBuilder) -> None:
 	"""Build a KISS frame from `text` and send it to Direwolf."""
 	payload: bytes = text.encode("utf-8")
 	frame: bytes = builder.build_ax25_frame(payload)
@@ -40,7 +41,7 @@ def send_frame(sock: socket.socket, text: str, builder: FrameBuilder) -> None:
 	print(f"{GREEN}[TX]{RESET} {text}")
 
 
-def listener(sock: socket.socket, builder: FrameBuilder) -> None:
+def listener(sock: socket.socket, builder: AX25FrameBuilder) -> None:
 	buffer = bytearray()
 
 	while True:
@@ -74,8 +75,8 @@ def listener(sock: socket.socket, builder: FrameBuilder) -> None:
 					break
 
 				# Extract full frame
-				frame = buffer[:end + 1]
-				del buffer[:end + 1]
+				frame = buffer[: end + 1]
+				del buffer[: end + 1]
 
 				if len(frame) <= 3:
 					continue
@@ -111,8 +112,8 @@ def main() -> None:
 			break
 		print(f"{BRIGHT_RED}Invalid response.{RESET}")
 
-	config = FrameConfig(f"{conf_msg[0]:6.6s}", 0, f"{conf_msg[1]:6.6s}", 0)
-	builder = FrameBuilder(config)
+	config = AX25FrameConfig(f"{conf_msg[0]:6.6s}", 0, f"{conf_msg[1]:6.6s}", 0)
+	builder = AX25FrameBuilder(config)
 
 	threading.Thread(target=listener, args=(direwolf_socket, builder), daemon=True).start()
 
@@ -128,7 +129,7 @@ def main() -> None:
 					if not (is_valid_callsign(dest) and is_valid_callsign(src)):
 						print(f"{BRIGHT_RED}Invalid callsign in command. Callsigns must be 1-6 characters, uppercase letters and digits only.{RESET}")
 						continue
-					builder.config = FrameConfig(f"{dest:6.6s}", 0, f"{src:6.6s}", 0)
+					builder.config = AX25FrameConfig(f"{dest:6.6s}", 0, f"{src:6.6s}", 0)
 					print(f"{BRIGHT_YELLOW}Updated addresses:{RESET} DEST={dest}, SRC={src}")
 				else:
 					print(f"{BRIGHT_BLACK}Usage: /ADDR DESTCALL SRCCALL{RESET}")
