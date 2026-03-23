@@ -59,21 +59,19 @@ def test_decode_kiss_frame_unescapes_and_returns_original() -> None:
 	assert decoded == ax25
 
 
-def test_decode_invalid_frames_raise() -> None:
+@pytest.mark.parametrize(
+	"frame",
+	[
+		b"",  # too short
+		bytes([0x00, 0x00, 0xC0]),  # missing starting FEND
+		bytes([0xC0, 0x00, 0x00]),  # missing ending FEND
+	],
+)
+def test_decode_invalid_frames_raise(frame: bytes) -> None:
 	cfg = KISSFrameConfig(0x00)
 	builder = KISSFrameBuilder(cfg)
-
-	# Too short
 	with pytest.raises(InvalidKISSError):
-		builder.decode_kiss_frame(b"")
-
-	# Missing starting FEND
-	with pytest.raises(InvalidKISSError):
-		builder.decode_kiss_frame(bytes([0x00, 0x00, 0xC0]))
-
-	# Missing ending FEND
-	with pytest.raises(InvalidKISSError):
-		builder.decode_kiss_frame(bytes([0xC0, 0x00, 0x00]))
+		builder.decode_kiss_frame(frame)
 
 
 def test_decode_nonzero_command_raises() -> None:
