@@ -110,17 +110,21 @@ class AX25FrameBuilder:
 	frames.
 	"""
 
-	def __init__(self, config: AX25FrameConfig, ax25_control: bytes = b"\x03", ax25_pid: bytes = b"\x01") -> None:
+	def __init__(self, config: AX25FrameConfig, ax25_control: int = 0x03, ax25_pid: int = 0x01) -> None:
 		self.config: AX25FrameConfig = config
-		self.control: bytes = ax25_control
-		self.pid: bytes = ax25_pid
+		self.control: int = ax25_control
+		self.pid: int = ax25_pid
 
 	def build_ax25_frame(self, payload: bytes) -> bytes:
 		compressed: bytes = zlib.compress(payload, level=9, wbits=15)
-		return self.config.dest_frame + self.config.src_frame + self.control + self.pid + (compressed if len(compressed) < len(payload) else payload)
+		return self.config.dest_frame + self.config.src_frame + bytes([self.control]) + bytes([self.pid]) + (compressed if len(compressed) < len(payload) else payload)
 
 	def decode_ax25_frame(self, ax25_frame: bytes) -> tuple[str, str, str] | None:
-		"""Takes in a single whole AX25 frame"""
+		"""
+		Decodes an AX.25 frame from bytes, extracting and returning the
+		destination callsign, source callsign, and UTF-8 decoded payload text.
+		Returns None if the frame is invalid or cannot be parsed.
+		"""
 
 		# Minimal AX.25 length: two 7-byte addresses + CONTROL + PID = 16
 		if len(ax25_frame) < 16:

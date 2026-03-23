@@ -12,7 +12,7 @@ def test_decode_full_payload_not_truncated() -> None:
 	stripping the last 2 bytes (which were incorrectly assumed to be FCS)."""
 	ax25_config = AX25FrameConfig("W1AW", 0, "K9JRR", 0)
 	ax25_builder = AX25FrameBuilder(ax25_config)
-	kiss_config = KISSFrameConfig(b"\x00")
+	kiss_config = KISSFrameConfig(0x00)
 	kiss_builder = KISSFrameBuilder(kiss_config)
 	payload = b"Hello, World!"
 	ax25_frame = ax25_builder.build_ax25_frame(payload)
@@ -33,7 +33,7 @@ def test_decode_short_payload_not_truncated() -> None:
 	"""Verify that a short payload (where slicing -2 would drop real data) is preserved."""
 	ax25_config = AX25FrameConfig("W1AW", 0, "K9JRR", 0)
 	ax25_builder = AX25FrameBuilder(ax25_config)
-	kiss_config = KISSFrameConfig(b"\x00")
+	kiss_config = KISSFrameConfig(0x00)
 	kiss_builder = KISSFrameBuilder(kiss_config)
 	payload = b"Hi"
 	ax25_frame = ax25_builder.build_ax25_frame(payload)
@@ -54,7 +54,7 @@ def test_build_kiss_frame_escapes_special_bytes() -> None:
 	"""Payload includes bytes that must be escaped in KISS: 0xC0 (FEND) and 0xDB (FESC)."""
 	ax25_config = AX25FrameConfig("W1AW", 0, "K9JRR", 0)
 	ax25_builder = AX25FrameBuilder(ax25_config)
-	kiss_config = KISSFrameConfig(b"\x00")
+	kiss_config = KISSFrameConfig(0x00)
 	kiss_builder = KISSFrameBuilder(kiss_config)
 	payload = b"\xc0ABC\xdb"
 	ax25_frame = ax25_builder.build_ax25_frame(payload)
@@ -92,7 +92,7 @@ def test_kiss_round_trip_with_escaped_bytes() -> None:
 	"""Verify that bytes requiring KISS escaping survive a full encode/decode round trip."""
 	ax25_config = AX25FrameConfig("W1AW", 0, "K9JRR", 0)
 	ax25_builder = AX25FrameBuilder(ax25_config)
-	kiss_config = KISSFrameConfig(b"\x00")
+	kiss_config = KISSFrameConfig(0x00)
 	kiss_builder = KISSFrameBuilder(kiss_config)
 	payload = b"\xc0ABC\xdb"
 	ax25_frame = ax25_builder.build_ax25_frame(payload)
@@ -115,7 +115,7 @@ def test_decode_kiss_dangling_fesc_does_not_crash() -> None:
 	This exercises the unescape logic's handling of an unterminated escape sequence."""
 	ax25_config = AX25FrameConfig("W1AW", 0, "K9JRR", 0)
 	ax25_builder = AX25FrameBuilder(ax25_config)
-	kiss_config = KISSFrameConfig(b"\x00")
+	kiss_config = KISSFrameConfig(0x00)
 	kiss_builder = KISSFrameBuilder(kiss_config)
 
 	# KISS frame: 0xC0, command=0x00, data=[0xDB], 0xC0
@@ -134,7 +134,7 @@ def test_decode_kiss_nonstandard_escape_sequence_does_not_crash() -> None:
 	unescape logic correctly handles unknown escape codes."""
 	ax25_config = AX25FrameConfig("W1AW", 0, "K9JRR", 0)
 	ax25_builder = AX25FrameBuilder(ax25_config)
-	kiss_config = KISSFrameConfig(b"\x00")
+	kiss_config = KISSFrameConfig(0x00)
 	kiss_builder = KISSFrameBuilder(kiss_config)
 
 	# KISS frame: 0xC0, command=0x00, data=[0xDB, 0x00], 0xC0
@@ -152,7 +152,7 @@ def test_decode_handles_non_zero_kiss_command() -> None:
 	that decode can handle it without raising and correctly rejects non-data commands."""
 	ax25_config = AX25FrameConfig("W1AW", 0, "K9JRR", 0)
 	ax25_builder = AX25FrameBuilder(ax25_config)
-	kiss_config = KISSFrameConfig(b"\x00")
+	kiss_config = KISSFrameConfig(0x00)
 	kiss_builder = KISSFrameBuilder(kiss_config)
 	payload = b"OK"
 	ax25_frame = ax25_builder.build_ax25_frame(payload)
@@ -178,7 +178,7 @@ def test_kiss_round_trip_with_compressed_payload() -> None:
 	message after a full AX.25 + KISS round trip."""
 	ax25_config = AX25FrameConfig("W1AW", 0, "K9JRR", 0)
 	ax25_builder = AX25FrameBuilder(ax25_config)
-	kiss_config = KISSFrameConfig(b"\x00")
+	kiss_config = KISSFrameConfig(0x00)
 	kiss_builder = KISSFrameBuilder(kiss_config)
 	# Large, repetitive payload should be attractive to typical compressors.
 	payload = b"AJFKDSFJKSDJFKDJFSJWDFKJSKFDFHUIHSBDU" * 10000

@@ -125,7 +125,7 @@ def main() -> None:
 
 	ax25_config = AX25FrameConfig(f"{conf_msg[0]:6.6s}", 0, f"{conf_msg[1]:6.6s}", 0)
 	ax25_builder = AX25FrameBuilder(ax25_config)
-	kiss_config = KISSFrameConfig(b"\x00")
+	kiss_config = KISSFrameConfig(0x00)
 	kiss_builder = KISSFrameBuilder(kiss_config)
 
 	threading.Thread(target=listener, args=(direwolf_socket, kiss_builder, ax25_builder), daemon=True).start()

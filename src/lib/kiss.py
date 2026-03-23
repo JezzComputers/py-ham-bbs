@@ -3,15 +3,19 @@ class InvalidKISSError(ValueError):
 
 
 class KISSFrameConfig:
-	def __init__(self, kiss_command: bytes) -> None:
-		self._kiss_command: bytes = kiss_command
+	def __init__(self, kiss_command: int) -> None:
+		if not (0 <= kiss_command <= 0xFF):
+			raise InvalidKISSError("KISS command must be exactly 1 byte")
+		self._kiss_command: int = kiss_command
 
 	@property
-	def kiss_command(self) -> bytes:
+	def kiss_command(self) -> int:
 		return self._kiss_command
 
 	@kiss_command.setter
-	def kiss_command(self, value: bytes) -> None:
+	def kiss_command(self, value: int) -> None:
+		if not (0 <= value <= 0xFF):
+			raise InvalidKISSError("KISS command must be exactly 1 byte")
 		self._kiss_command = value
 
 
@@ -21,7 +25,7 @@ class KISSFrameBuilder:
 
 	def build_kiss_frame(self, ax25_frame: bytes) -> bytes:
 		"""Takes AX.25 frame and adds KISS framing and escapes"""
-		out: bytearray = bytearray(b"\xC0" + self._config.kiss_command)  # fmt: skip
+		out: bytearray = bytearray([0xC0, self._config.kiss_command])  # fmt: skip
 		for b in ax25_frame:
 			if b == 0xDB:
 				out.extend(b"\xDB\xDD")  # fmt: skip
@@ -36,7 +40,7 @@ class KISSFrameBuilder:
 		"""Remove KISS framing and unescape. Raises InvalidKISSError on invalid input."""
 		if len(kiss_frame) < 3 or kiss_frame[0] != 0xC0 or kiss_frame[-1] != 0xC0:
 			raise InvalidKISSError(f"Invalid KISS frame: {kiss_frame.hex()}")
-		if len(kiss_frame) > 1 and kiss_frame[1] != 0x00:
+		if kiss_frame[1] != 0x00:
 			raise InvalidKISSError(f"Unsupported KISS command byte: {kiss_frame[1]:02X}")
 
 		kiss_payload: bytes = kiss_frame[2:-1]
