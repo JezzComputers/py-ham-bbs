@@ -85,7 +85,7 @@ def listener(sock: socket.socket, kiss_builder: KISSFrameBuilder, ax25_builder: 
 
 				try:
 					ax25_frame: bytes = kiss_builder.decode_kiss_frame(bytes(frame))
-					res: tuple[str, str, str] | None = ax25_builder.decode_ax25_frame(ax25_frame)
+					res: tuple[str, str, str] = ax25_builder.decode_ax25_frame(ax25_frame)
 
 				except InvalidKISSError as e:
 					print(f"{MAGENTA}[DECODED]{RESET} <invalid KISS frame: {e}>")
@@ -95,8 +95,6 @@ def listener(sock: socket.socket, kiss_builder: KISSFrameBuilder, ax25_builder: 
 					print(f"{MAGENTA}[DECODED]{RESET} <invalid AX.25 frame: {e}>")
 					continue
 
-				if res is None:
-					print(f"{MAGENTA}[DECODED]{RESET} <invalid frame>")
 				else:
 					dest, src, text = res
 					print(f"{BLUE}[DECODED]{RESET} {src} → {dest} : {text}")
@@ -140,7 +138,7 @@ def main() -> None:
 				if len(parts) == 3:
 					dest, src = parts[1], parts[2]
 					if not (is_valid_callsign(dest) and is_valid_callsign(src)):
-						print(f"{BRIGHT_RED}Invalid callsign in command. Callsigns must be 1-6 characters, letters and numbers only.{RESET}")
+						print(f"{BRIGHT_RED}Invalid callsign in command. Please enter a valid AX.25 callsign.{RESET}")
 						continue
 					ax25_builder.config = AX25FrameConfig(f"{dest:6.6s}", 0, f"{src:6.6s}", 0)
 					print(f"{BRIGHT_YELLOW}Updated addresses:{RESET} DEST={dest}, SRC={src}")

@@ -1,6 +1,6 @@
 import pytest
 
-from lib.ax25 import AX25FrameBuilder, AX25FrameConfig
+from lib.ax25 import AX25FrameBuilder, AX25FrameConfig, InvalidAX25Error
 from lib.kiss import InvalidKISSError, KISSFrameBuilder, KISSFrameConfig
 from lib.terminal import use_color
 
@@ -125,7 +125,8 @@ def test_decode_kiss_dangling_fesc_does_not_crash() -> None:
 	# Decoder should not raise on malformed escape sequences; raw AX.25 should be returned
 	# but later AX.25 parsing will reject this as not a valid frame.
 	assert res is not None
-	assert ax25_builder.decode_ax25_frame(res) is None
+	with pytest.raises(InvalidAX25Error):
+		ax25_builder.decode_ax25_frame(res)
 
 
 def test_decode_kiss_nonstandard_escape_sequence_does_not_crash() -> None:
@@ -144,7 +145,8 @@ def test_decode_kiss_nonstandard_escape_sequence_does_not_crash() -> None:
 	# As with the dangling FESC case, decoder should be robust; raw AX.25 is returned
 	# but AX.25 parsing should reject it as invalid.
 	assert res is not None
-	assert ax25_builder.decode_ax25_frame(res) is None
+	with pytest.raises(InvalidAX25Error):
+		ax25_builder.decode_ax25_frame(res)
 
 
 def test_decode_handles_non_zero_kiss_command() -> None:

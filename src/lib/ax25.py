@@ -3,11 +3,11 @@ import zlib
 
 
 class InvalidAX25Error(ValueError):
-	"""Raised when an AX.25 frame is invalid or uses an unsupported command."""
+	"""Raised when an AX.25 frame is structurally invalid or truncated."""
 
 
 def is_valid_callsign(call: str) -> bool:
-	return re.search(r"^[A-Z]{1,2}[0-9][A-Z]{1,3}$", call.upper()) is not None
+	return re.fullmatch(r"[A-Z]{1,2}[0-9][A-Z]{1,3}", call.upper()) is not None
 
 
 def ax25_call(callsign: str, ssid: int = 0, last: bool = False) -> bytes:
@@ -119,38 +119,36 @@ class AX25FrameBuilder:
 		compressed: bytes = zlib.compress(payload, level=9, wbits=15)
 		return self.config.dest_frame + self.config.src_frame + bytes([self.control]) + bytes([self.pid]) + (compressed if len(compressed) < len(payload) else payload)
 
-	def decode_ax25_frame(self, ax25_frame: bytes) -> tuple[str, str, str] | None:
+	def decode_ax25_frame(self, ax25_frame: bytes) -> tuple[str, str, str]:
 		"""
 		Decodes an AX.25 frame from bytes, extracting and returning the
 		destination callsign, source callsign, and UTF-8 decoded payload text.
-		Returns None if the frame is invalid or cannot be parsed.
+		Raises InvalidAX25Error if the frame is invalid or cannot be parsed.
 		"""
 
 		# Minimal AX.25 length: two 7-byte addresses + CONTROL + PID = 16
 		if len(ax25_frame) < 16:
-			return None
+			raise InvalidAX25Error("truncated AX.25 frame")
 
 		try:
 			addresses, idx = parse_ax25_addresses(ax25_frame)
-		except InvalidAX25Error:
-			return None
+		except InvalidAX25Error as e:
+			raise InvalidAX25Error("invalid AX.25 address field") from e
+
 		if len(addresses) < 2:
-			return None
-		dest_raw: bytes = addresses[0]
-		src_raw: bytes = addresses[1]
+			raise InvalidAX25Error("insufficient AX.25 addresses")
+
 		# Require at least CONTROL and PID bytes after the addresses.
 		if len(ax25_frame) < idx + 2:
-			return None
+			raise InvalidAX25Error("truncated AX.25 frame")
+
+		dest: str = decode_call(addresses[0])
+		src: str = decode_call(addresses[1])
 		payload: bytes = ax25_frame[idx + 2 :]
 
 		try:
-			payload_data: bytes = zlib.decompress(payload, wbits=15)
+			text: str = zlib.decompress(payload, wbits=15).decode(encoding="utf-8", errors="replace")
 		except zlib.error:
-			payload_data = payload
-
-		dest: str = decode_call(dest_raw)
-		src: str = decode_call(src_raw)
-
-		text: str = payload_data.decode(encoding="utf-8", errors="replace")
+			text: str = payload.decode(encoding="utf-8", errors="replace")
 
 		return dest, src, text

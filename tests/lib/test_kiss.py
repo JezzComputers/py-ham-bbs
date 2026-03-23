@@ -82,8 +82,8 @@ def test_decode_nonzero_command_raises() -> None:
 
 	ax25 = b"OK"
 	kiss = bytearray(builder.build_kiss_frame(ax25))
-	# Set command byte to non-zero
-	kiss[1] = 0x10
+	# Set command nibble (lower 4 bits) to non-zero: 0x01 = command 1 on port 0
+	kiss[1] = 0x01
 
 	with pytest.raises(InvalidKISSError):
 		builder.decode_kiss_frame(bytes(kiss))
@@ -98,3 +98,16 @@ def test_round_trip_build_then_decode() -> None:
 	decoded = builder.decode_kiss_frame(kiss)
 
 	assert decoded == ax25
+
+
+def test_decode_kiss_frame_missing_fend_markers_raise() -> None:
+	cfg = KISSFrameConfig(0x00)
+	builder = KISSFrameBuilder(cfg)
+
+	# Missing leading FEND (0xC0)
+	with pytest.raises(InvalidKISSError):
+		builder.decode_kiss_frame(bytes([0x00, 0x00, 0xC0]))
+
+	# Missing trailing FEND (0xC0)
+	with pytest.raises(InvalidKISSError):
+		builder.decode_kiss_frame(bytes([0xC0, 0x00, 0x00]))
