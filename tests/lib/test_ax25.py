@@ -164,9 +164,9 @@ def test_decode_handles_non_zero_kiss_command() -> None:
 	assert kiss_frame[0] == 0xC0
 	assert kiss_frame[-1] == 0xC0
 
-	# Change the command byte to a non-zero value (e.g., 0x10) while preserving payload.
+	# Change the command byte to a non-zero value (0x01) while preserving payload.
 	modified = bytearray(kiss_frame)
-	modified[1] = 0x10
+	modified[1] = 0x01
 	kiss_frame_non_zero = bytes(modified)
 
 	# Non-zero KISS command bytes indicate non-data frames; decoder now raises InvalidKISSError

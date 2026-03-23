@@ -7,7 +7,8 @@ class InvalidAX25Error(ValueError):
 
 
 def is_valid_callsign(call: str) -> bool:
-	return re.fullmatch(r"[A-Z]{1,2}[0-9][A-Z]{1,3}", call.upper()) is not None
+	# AX.25 address field: 1-6 uppercase letters/digits (SSID is separate)
+	return re.fullmatch(r"[A-Z0-9]{1,6}", call.upper()) is not None
 
 
 def ax25_call(callsign: str, ssid: int = 0, last: bool = False) -> bytes:
