@@ -5,9 +5,9 @@ custom warning formatter into the :mod:`warnings` module so Python warnings
 are printed with a colour corresponding to their category.
 
 Example:
-	>>> from src.lib import terminal
-	>>> terminal.use_color()
-	# subsequent warnings will be coloured
+>>> from lib.terminal import use_color
+>>> use_color()
+# subsequent warnings will be coloured
 """
 
 import warnings
@@ -104,7 +104,9 @@ def use_color() -> None:
 	"""
 	warnings.formatwarning = colored_formatwarning
 
+
 if __name__ == "__main__":
+	# fmt: off
 	print(
 f"""{BLACK}██{RESET} BLACK
 {RED}██{RESET} RED
@@ -123,3 +125,4 @@ f"""{BLACK}██{RESET} BLACK
 {BRIGHT_CYAN}██{RESET} BRIGHT_CYAN
 {BRIGHT_WHITE}██{RESET} BRIGHT_WHITE"""
 	)
+	# fmt: on
