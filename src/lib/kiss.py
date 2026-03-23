@@ -35,9 +35,9 @@ class KISSFrameBuilder:
 	def decode_kiss_frame(self, kiss_frame: bytes) -> bytes:
 		"""Remove KISS framing and unescape. Raises InvalidKISSError on invalid input."""
 		if len(kiss_frame) < 3 or kiss_frame[0] != 0xC0 or kiss_frame[-1] != 0xC0:
-			if len(kiss_frame) > 1 and kiss_frame[1] != 0x00:
-				raise InvalidKISSError(f"Unsupported KISS command byte: {kiss_frame[1]:02X}")
 			raise InvalidKISSError(f"Invalid KISS frame: {kiss_frame.hex()}")
+		if len(kiss_frame) > 1 and kiss_frame[1] != 0x00:
+			raise InvalidKISSError(f"Unsupported KISS command byte: {kiss_frame[1]:02X}")
 
 		kiss_payload: bytes = kiss_frame[2:-1]
 
