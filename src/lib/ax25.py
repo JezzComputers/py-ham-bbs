@@ -7,7 +7,11 @@ class InvalidAX25Error(ValueError):
 
 
 def is_valid_callsign(call: str) -> bool:
-	# AX.25 address field: 1-6 uppercase letters/digits (SSID is separate)
+	"""
+	Validates whether the given call string is an ASCII callsign consisting
+	of 1 to 6 letters or digits, matching the AX.25 address field format.
+	Returns True if valid, otherwise False.
+	"""
 	return call.isascii() and bool(re.fullmatch(r"[A-Z0-9]{1,6}", call, re.IGNORECASE))
 
 
