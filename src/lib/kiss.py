@@ -21,12 +21,12 @@ class KISSFrameBuilder:
 
 	def build_kiss_frame(self, ax25_frame: bytes) -> bytes:
 		"""Takes AX.25 frame and adds KISS framing and escapes"""
-		out: bytearray = bytearray(b"\xC0" + self._config.kiss_command)
+		out: bytearray = bytearray(b"\xC0" + self._config.kiss_command)  # fmt: skip
 		for b in ax25_frame:
 			if b == 0xDB:
-				out.extend(b"\xDB\xDD")
+				out.extend(b"\xDB\xDD")  # fmt: skip
 			elif b == 0xC0:
-				out.extend(b"\xDB\xDC")
+				out.extend(b"\xDB\xDC")  # fmt: skip
 			else:
 				out.append(b)
 		out.append(0xC0)

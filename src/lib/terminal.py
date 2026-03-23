@@ -106,6 +106,7 @@ def use_color() -> None:
 
 
 if __name__ == "__main__":
+	# fmt: off
 	print(
 f"""{BLACK}██{RESET} BLACK
 {RED}██{RESET} RED
@@ -124,3 +125,4 @@ f"""{BLACK}██{RESET} BLACK
 {BRIGHT_CYAN}██{RESET} BRIGHT_CYAN
 {BRIGHT_WHITE}██{RESET} BRIGHT_WHITE"""
 	)
+	# fmt: on

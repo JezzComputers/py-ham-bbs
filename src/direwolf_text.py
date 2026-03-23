@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from lib.ax25 import (
 	AX25FrameBuilder,
 	AX25FrameConfig,
+	InvalidAX25Error,
 	is_valid_callsign,
 )
 from lib.kiss import InvalidKISSError, KISSFrameBuilder, KISSFrameConfig
@@ -90,7 +91,7 @@ def listener(sock: socket.socket, kiss_builder: KISSFrameBuilder, ax25_builder: 
 					print(f"{MAGENTA}[DECODED]{RESET} <invalid KISS frame: {e}>")
 					continue
 
-				except Exception as e:
+				except InvalidAX25Error as e:
 					print(f"{MAGENTA}[DECODED]{RESET} <invalid AX.25 frame: {e}>")
 					continue
 

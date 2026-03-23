@@ -2,6 +2,10 @@ import re
 import zlib
 
 
+class InvalidAX25Error(ValueError):
+	"""Raised when an AX.25 frame is invalid or uses an unsupported command."""
+
+
 def is_valid_callsign(call: str) -> bool:
 	return re.search(r"^[A-Z]{1,2}[0-9][A-Z]{1,3}$", call.upper()) is not None
 
@@ -27,7 +31,7 @@ def parse_ax25_addresses(frame: bytes) -> tuple[list[bytes], int]:
 	idx = 0
 	while True:
 		if idx + 7 > len(frame):
-			raise ValueError("truncated AX.25 address field")
+			raise InvalidAX25Error("truncated AX.25 address field")
 		addr: bytes = frame[idx : idx + 7]
 		addresses.append(addr)
 		idx += 7
@@ -42,6 +46,7 @@ class AX25FrameConfig:
 	and source callsigns and SSIDs, and providing their encoded frame
 	representations as bytes.
 	"""
+
 	def __init__(self, dest_call: str, dest_ssid: int, src_call: str, src_ssid: int) -> None:
 		self._dest_call: str = dest_call.upper()
 		self._dest_ssid: int = dest_ssid
@@ -104,6 +109,7 @@ class AX25FrameBuilder:
 	compression and extraction of source, destination, and message text from
 	frames.
 	"""
+
 	def __init__(self, config: AX25FrameConfig, ax25_control: bytes = b"\x03", ax25_pid: bytes = b"\x01") -> None:
 		self.config: AX25FrameConfig = config
 		self.control: bytes = ax25_control
@@ -122,7 +128,7 @@ class AX25FrameBuilder:
 
 		try:
 			addresses, idx = parse_ax25_addresses(ax25_frame)
-		except ValueError:
+		except InvalidAX25Error:
 			return None
 		if len(addresses) < 2:
 			return None
@@ -144,4 +150,3 @@ class AX25FrameBuilder:
 		text: str = payload_data.decode(encoding="utf-8", errors="replace")
 
 		return dest, src, text
-
