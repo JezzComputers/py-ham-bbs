@@ -7,7 +7,7 @@ version = "0.1.0"
 description = "Python based BBS"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = ["websockets"]
 
 # Install with uv sync --upgrade --all-groups
 [dependency-groups]
