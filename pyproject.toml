@@ -41,6 +41,7 @@ ignore = [
 	"TRY",    # exception message rules
 	"EM",     # exception literal rules
 	"B028",   # warnings stacklevel
+	"I001",   # Import block formating
 	"INP",    # implicit namespace package
 	"S101",   # assert in tests
 	"C90",    # complexity rules
@@ -66,3 +67,10 @@ reportPrivateUsage = "error"
 reportIncompatibleMethodOverride = "error"
 reportIncompatibleVariableOverride = "error"
 reportUntypedFunctionDecorator = "error"
+
+[[tool.pyright.executionEnvironments]]
+root = "."
+extraPaths = [
+  ".",
+  ".venv/lib/python3.14/site-packages"
+]
