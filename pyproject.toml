@@ -71,6 +71,7 @@ reportUntypedFunctionDecorator = "error"
 [[tool.pyright.executionEnvironments]]
 root = "."
 extraPaths = [
+  "src",
   ".",
   ".venv/lib/python3.14/site-packages"
 ]
