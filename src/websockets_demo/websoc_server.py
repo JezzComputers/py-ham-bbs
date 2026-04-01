@@ -15,7 +15,7 @@ async def handler(websocket: ServerConnection) -> None:
 
 
 async def main() -> None:
-	async with serve(handler, "0.0.0.0", 8888) as server:
+	async with serve(handler, "0.0.0.0", 8888) as server:  # noqa: S104
 		print("Time server started on ws://0.0.0.0:8888")
 		await server.serve_forever()
 
