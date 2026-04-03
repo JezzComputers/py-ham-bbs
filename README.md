@@ -6,6 +6,8 @@ Tools and configuration files for building a lightweight ham radio packet BBS ma
 
 ## Documentation
 
+WebSocket Message Protocol can be found [here](https://github.com/jezza5400-org/py-ham-bbs/wiki/08%E2%80%90WebSocket-Message-Protocol).
+
 If possible the radio should be in FM-D (FM Data) mode as audio goes through the DATA path (USB soundcard or ACC connector) which is flat, wide, and unprocessed (what AX.25 wants)
 
 ## GitHub Actions
