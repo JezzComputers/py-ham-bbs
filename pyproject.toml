@@ -7,11 +7,7 @@ version = "0.1.0"
 description = "Python based BBS"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = [
-    "websockets",
-    "uuid-v7; python_version < '3.14'",
-    "uuid-v7>=1.0.0",
-]
+dependencies = ["websockets", "uuid6; python_version < '3.14'"]
 
 # Install with uv sync --upgrade --all-groups
 [dependency-groups]
