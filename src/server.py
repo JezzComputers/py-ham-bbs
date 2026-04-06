@@ -17,15 +17,15 @@ logger = logging.getLogger(__name__)
 
 
 async def handler(websocket: ServerConnection) -> None:
-	logger.log(logging.INFO, "Client connected: %s", websocket.remote_address)
+	logger.info("Client connected: %s", websocket.remote_address)
 	try:
 		while True:
 			await websocket.send(json.dumps({"timestamp": datetime.now(ZoneInfo("Australia/Melbourne")).isoformat(), "uuid": str(uuid7())}))  # pyright: ignore[reportUnknownArgumentType]
 			await asyncio.sleep(1)
 	except ConnectionClosed as e:
-		logger.log(logging.INFO, "Connection closed: %s", e)
+		logger.info("Connection closed: %s", e)
 	finally:
-		logger.log(logging.INFO, "Client disconnected: %s", websocket.remote_address)
+		logger.info("Client disconnected: %s", websocket.remote_address)
 
 
 async def main() -> None:
