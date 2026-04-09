@@ -7,10 +7,11 @@ import json
 import logging
 
 from platform import python_version_tuple
+
 if int(python_version_tuple()[1]) < 14:
-	from uuid6 import uuid7  # pyright: ignore[reportMissingImports, reportUnknownVariableType]
+	from uuid6 import uuid7  # pyright: ignore[reportMissingImports, reportUnknownVariableType]  # ty:ignore[unresolved-import]
 else:
-	from uuid import uuid7
+	from uuid import uuid7  # ty:ignore[unresolved-import]
 
 
 logger = logging.getLogger(__name__)
