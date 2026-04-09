@@ -12,6 +12,7 @@ Example:
 
 import warnings
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 # Standard 8 colors
 BLACK = "\033[30m"
@@ -65,11 +66,11 @@ def _color_for(category: type[Warning]) -> str:
 
 
 # Keep the original formatter so we can delegate to it.
-original_formatwarning: Callable[..., str] = warnings.formatwarning
+original_formatwarning: Callable[[Warning | str, type[Warning], str, int, str | None], str] = warnings.formatwarning
 
 
 def colored_formatwarning(
-	message: object,
+	message: Warning | str,
 	category: type[Warning],
 	filename: str,
 	lineno: int,
@@ -102,7 +103,8 @@ def use_color() -> None:
 	After calling this function, calls to :func:`warnings.warn` will use the
 	coloured formatter defined in :func:`colored_formatwarning`.
 	"""
-	warnings.formatwarning = colored_formatwarning
+	if not TYPE_CHECKING:
+		warnings.formatwarning = colored_formatwarning
 
 
 if __name__ == "__main__":

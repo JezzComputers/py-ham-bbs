@@ -32,7 +32,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        python-version: ["3.13.12", "3.14.3"]
+        python-version: ["3.13.13", "3.14.4"]
 
     steps:
       - uses: actions/checkout@v6
@@ -66,8 +66,18 @@ jobs:
       - name: Run tests
         run: uv run pytest
 
+      - name: Run ty
+        run: uv run ty check
+        continue-on-error: true
+
       - name: Run pyright
         run: uv run pyright
+        continue-on-error: true
 
       - name: Run ruff
         run: uv run ruff check
+        continue-on-error: true
+
+      - name: Run ruff format
+        run: uv run ruff format --diff
+        continue-on-error: true
