@@ -1,4 +1,4 @@
-# Run tests with: uv run pytest && uv run pyright && uv run ruff check && uv run ruff format --diff
+# Run tests with: uv run pytest; uv run ty check; uv run pyright; uv run ruff check; uv run ruff format --diff
 
 # Project configuration
 [project]
@@ -11,7 +11,7 @@ dependencies = ["websockets", "uuid6; python_version < '3.14'"]
 
 # Install with uv sync --upgrade --all-groups
 [dependency-groups]
-dev = ["pyright", "pytest", "ruff", "snakeviz"]
+dev = ["pyright", "ty", "pytest", "ruff"]
 
 [tool.pytest.ini_options]
 minversion = "9.0"
@@ -20,6 +20,28 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 filterwarnings = ["always"]
 pythonpath = ["src"]
+
+[tool.ty.rules]
+possibly-missing-attribute = "warn"
+possibly-missing-import = "warn"
+possibly-unresolved-reference = "warn"
+
+[tool.ty.environment]
+root = ["src", "src/lib"]
+
+[tool.pyright]
+typeCheckingMode = "strict"
+reportMissingTypeStubs = true
+reportUnusedImport = "error"
+reportUnusedVariable = "error"
+reportPrivateUsage = "error"
+reportIncompatibleMethodOverride = "error"
+reportIncompatibleVariableOverride = "error"
+reportUntypedFunctionDecorator = "error"
+
+[[tool.pyright.executionEnvironments]]
+root = "."
+extraPaths = ["src", "src/lib", ".venv/lib/python3.14/site-packages", ".venv/lib/python3.13/site-packages"]
 
 [tool.ruff]
 target-version = "py314"
@@ -52,17 +74,3 @@ ignore = [
 quote-style = "double"
 indent-style = "tab"
 line-ending = "lf"
-
-[tool.pyright]
-typeCheckingMode = "strict"
-reportMissingTypeStubs = true
-reportUnusedImport = "error"
-reportUnusedVariable = "error"
-reportPrivateUsage = "error"
-reportIncompatibleMethodOverride = "error"
-reportIncompatibleVariableOverride = "error"
-reportUntypedFunctionDecorator = "error"
-
-[[tool.pyright.executionEnvironments]]
-root = "."
-extraPaths = ["src", ".", ".venv/lib/python3.14/site-packages"]
