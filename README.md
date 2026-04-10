@@ -8,6 +8,23 @@ Tools and configuration files for building a lightweight ham radio packet BBS ma
 
 WebSocket Message Protocol can be found [here](https://github.com/jezza5400-org/py-ham-bbs/wiki/08%E2%80%90WebSocket-Message-Protocol).
 
+## Implemented Protocol Subset
+
+The current server implementation in `src/server.py` supports a practical subset of the protocol for bidirectional exchange:
+
+- Accepts and validates JSON text frames for `message`, `ack`, `control`, and `error` types.
+- Assigns authoritative server-side `id` (UUIDv7) and `timestamp` (ISO-8601 with timezone) for accepted inbound frames.
+- Validates `source` and `destination` in `CALL-SSID` format and soft-binds `source` to each WebSocket session.
+- Validates `message` payload as KISS hex and verifies it can decode as a KISS-wrapped AX.25 frame.
+- Supports `ack_required` values `0`, `1`, and `2` (unknown numeric values are treated as `0`).
+- Persists idempotency mapping in SQLite (`client_msg_id -> server_id`) so retries can be deduplicated safely.
+- Returns protocol `error` frames on malformed payloads and includes original identifiers when available.
+
+### Runtime Environment
+
+- `PY_HAM_BBS_DB_PATH`: SQLite file path for protocol message/idempotency storage (default: `py_ham_bbs_protocol.db`).
+- `PY_HAM_BBS_SERVER_SOURCE`: Server source station id used for generated ACK/error frames (default: `SERVER-0`).
+
 If possible the radio should be in FM-D (FM Data) mode as audio goes through the DATA path (USB soundcard or ACC connector) which is flat, wide, and unprocessed (what AX.25 wants)
 
 ## GitHub Actions
