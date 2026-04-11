@@ -2,7 +2,7 @@ import * as React from "react";
 
 const Button = React.forwardRef<HTMLButtonElement, React.ComponentProps<"button">>(({ className, type = "button", style, ...props }, ref) => {
 	const computedStyle = { ...(style as React.CSSProperties) };
-	const isDisabled = Boolean((props as React.ComponentProps<typeof Button> & { disabled?: boolean }).disabled);
+	const isDisabled = Boolean(props.disabled);
 	computedStyle.cursor = isDisabled ? "not-allowed" : "pointer";
 
 	return (

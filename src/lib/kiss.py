@@ -14,7 +14,7 @@ _ESC_TFESC: bytes = bytes([FESC, TFESC])
 
 
 class KISSFrameConfig:
-	def __init__(self, kiss_command: int) -> None:
+	def __init__(self, kiss_command: int = 0x00) -> None:
 		if not (0 <= kiss_command <= 0xFF):
 			raise InvalidKISSError("KISS command must be exactly 1 byte")
 		self._kiss_command: int = kiss_command

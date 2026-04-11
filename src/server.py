@@ -1,6 +1,6 @@
-import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime, tzinfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import json
 import logging
 import os
@@ -8,11 +8,11 @@ from pathlib import Path
 from platform import python_version_tuple
 import re
 import sqlite3
-from typing import Any, Final, cast
+from typing import Any, Final, cast, Literal
 
+import asyncio
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from lib.ax25 import AX25FrameBuilder, AX25FrameConfig, InvalidAX25Error, is_valid_callsign
 from lib.kiss import InvalidKISSError, KISSFrameBuilder, KISSFrameConfig
@@ -25,34 +25,30 @@ else:
 
 logger = logging.getLogger(__name__)
 
-VALID_FRAME_TYPES: Final[set[str]] = {"message", "ack", "control", "error"}
-VALID_ACK_REQUIRED_VALUES: Final[set[int]] = {0, 1, 2}
-VALID_ACK_STATUS_VALUES: Final[set[str]] = {"received", "processed", "failed"}
+FrameType = Literal["message", "ack", "control", "error"]
+VALID_FRAME_TYPES: Final[frozenset[FrameType]] = frozenset({"message", "ack", "control", "error"})
+AckReqValues = Literal[0, 1, 2]
+VALID_ACK_REQUIRED_VALUES: Final[frozenset[AckReqValues]] = frozenset({0, 1, 2})
+AckStatValues = Literal["received", "processed", "failed"]
+VALID_ACK_STATUS_VALUES: Final[frozenset[AckStatValues]] = frozenset({"received", "processed", "failed"})
 CALLSIGN_WITH_SSID_RE: Final[re.Pattern[str]] = re.compile(r"^([A-Z0-9]{1,6})-(\d{1,2})$")
 DEFAULT_SERVER_SOURCE: Final[str] = "SERVER-0"
-DEFAULT_DB_PATH: Final[str] = "py_ham_bbs_protocol.db"
-
-
-def resolve_timezone() -> tzinfo:
-	try:
-		return ZoneInfo("Australia/Melbourne")
-	except ZoneInfoNotFoundError:
-		logger.warning("Timezone Australia/Melbourne unavailable; falling back to UTC")
-		return UTC
-
-
-LOCAL_TIMEZONE: Final[tzinfo] = resolve_timezone()
+DEFAULT_DB_PATH: Final[str] = "py_ham_bbs_log.db"
+try:
+	LOCAL_TIMEZONE: Final[tzinfo] = ZoneInfo("Australia/Melbourne")
+except ZoneInfoNotFoundError:
+	logger.warning("Timezone Australia/Melbourne unavailable; falling back to UTC")
+	LOCAL_TIMEZONE: Final[tzinfo] = UTC  # pyright: ignore[reportConstantRedefinition, reportGeneralTypeIssues]
 
 
 @dataclass(slots=True)
 class ParsedInboundFrame:
-	frame_type: str
+	frame_type: FrameType
+	client_msg_id: str | None
 	source: str
 	destination: str
 	ack_required: int
-	payload: str | dict[str, Any]
-	client_msg_id: str | None
-	original_id: str | None
+	payload: bytes | dict[str, Any]
 
 
 @dataclass(slots=True)
@@ -65,6 +61,8 @@ class PendingAckState:
 
 
 class MessageStore:
+	__slots__ = ("_connection",)
+
 	def __init__(self, db_path: Path) -> None:
 		db_path.parent.mkdir(parents=True, exist_ok=True)
 		self._connection = sqlite3.connect(db_path, check_same_thread=False)
@@ -117,12 +115,12 @@ class MessageStore:
 
 	def save_frame(
 		self,
-		server_id: str,
+		server_id: uuid7,
 		timestamp: str,
-		frame_type: str,
+		frame_type: FrameType,
 		source: str,
 		destination: str,
-		ack_required: int,
+		ack_required: AckReqValues,
 		payload: str,
 		client_msg_id: str | None,
 	) -> None:
@@ -137,10 +135,6 @@ class MessageStore:
 			)
 
 
-def generate_id() -> str:
-	return str(uuid7())  # pyright: ignore[reportUnknownArgumentType]
-
-
 def now_iso() -> str:
 	return datetime.now(LOCAL_TIMEZONE).isoformat()
 
@@ -149,8 +143,7 @@ def normalize_station_id(raw_value: object) -> str | None:
 	if not isinstance(raw_value, str):
 		return None
 
-	cleaned = raw_value.strip().upper()
-	match = CALLSIGN_WITH_SSID_RE.fullmatch(cleaned)
+	match = CALLSIGN_WITH_SSID_RE.fullmatch(raw_value.strip().upper())
 	if match is None:
 		return None
 
@@ -162,98 +155,81 @@ def normalize_station_id(raw_value: object) -> str | None:
 	return f"{callsign}-{ssid}"
 
 
-def normalize_ack_required(raw_value: object) -> int:
-	if isinstance(raw_value, bool):
-		return int(raw_value)
-	if isinstance(raw_value, int) and raw_value in VALID_ACK_REQUIRED_VALUES:
+def normalize_ack_required(raw_value: AckReqValues) -> int:
+	if raw_value in VALID_ACK_REQUIRED_VALUES:
 		return raw_value
 	return 0
 
 
-def validate_message_payload_hex(raw_payload: object) -> tuple[str | None, str | None]:
-	if not isinstance(raw_payload, str):
-		return None, "payload must be a hex string for type=message"
+def validate_message_payload_hex(payload: bytes) -> tuple[bytes, None] | tuple[None, str]:
+	if not isinstance(payload, bytes):
+		return None, 'payload must be bytes (e.g. byte string b"<hex>") for type=message'
 
-	payload_hex = raw_payload.strip()
-	if payload_hex == "":
+	if payload is None or payload == b"":
 		return None, "payload cannot be empty"
-	if len(payload_hex) % 2 != 0:
-		return None, "payload hex length must be even"
+	if len(payload) < 19:
+		return None, "payload hex length must be greater than 19"
+
+	if payload[0] != 0xC0 or payload[-1] != 0xC0:
+		return None, "payload must include leading and trailing C0 (FEND) bytes"
 
 	try:
-		payload_bytes = bytes.fromhex(payload_hex)
-	except ValueError:
-		return None, "payload is not valid hex"
+		AX25FrameBuilder(AX25FrameConfig()).decode_ax25_frame(KISSFrameBuilder(KISSFrameConfig()).decode_kiss_frame(payload))
+	except (InvalidKISSError, InvalidAX25Error) as e:
+		return None, f"payload is not a valid KISS/AX.25 frame: {e}"
 
-	if payload_bytes[0] != 0xC0 or payload_bytes[-1] != 0xC0:
-		return None, "payload must include leading and trailing C0 bytes"
-
-	try:
-		kiss_builder = KISSFrameBuilder(KISSFrameConfig(0x00))
-		ax25_frame = kiss_builder.decode_kiss_frame(payload_bytes)
-		ax25_builder = AX25FrameBuilder(AX25FrameConfig("N0CALL", 0, "N0CALL", 0))
-		ax25_builder.decode_ax25_frame(ax25_frame)
-	except (InvalidKISSError, InvalidAX25Error) as exc:
-		return None, f"payload is not a valid KISS/AX.25 frame: {exc}"
-
-	return payload_hex.lower(), None
+	return payload, None
 
 
-def payload_to_store_text(payload: str | dict[str, Any]) -> str:
-	if isinstance(payload, str):
-		return payload
-	return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+def payload_to_store_text(payload: bytes | dict[str, Any]) -> str:
+	if isinstance(payload, bytes):
+		return payload.hex()
+	return json.dumps(payload, separators=(",", ":"), sort_keys=True)
 
 
-def parse_inbound_frame(raw_frame: dict[str, Any]) -> tuple[ParsedInboundFrame | None, str | None]:
+def parse_inbound_frame(raw_frame: dict[str, Any]) -> tuple[ParsedInboundFrame, None] | tuple[None, str]:
 	frame_type = raw_frame.get("type")
-	if not isinstance(frame_type, str) or frame_type not in VALID_FRAME_TYPES:
-		return None, "type must be one of message, ack, control, error"
-
+	if frame_type not in VALID_FRAME_TYPES:
+		return None, f"type must be one of {VALID_FRAME_TYPES}"
 	client_msg_id = raw_frame.get("client_msg_id")
 	if client_msg_id is not None and not isinstance(client_msg_id, str):
 		return None, "client_msg_id must be a string when provided"
-
-	original_id = raw_frame.get("id")
-	original_frame_id = original_id if isinstance(original_id, str) else None
-
 	source = normalize_station_id(raw_frame.get("source"))
 	if source is None:
 		return None, "source must be a valid station id in CALL-SSID format"
-
 	destination = normalize_station_id(raw_frame.get("destination"))
 	if destination is None:
 		return None, "destination must be a valid station id in CALL-SSID format"
-
 	ack_required = normalize_ack_required(raw_frame.get("ack_required", 0))
-	payload = raw_frame.get("payload")
 
 	if frame_type == "message":
+		payload: bytes = cast(bytes, raw_frame.get("payload"))
+		if not isinstance(payload, bytes):
+			return None, f"payload must be a bytes object for type={frame_type}"
 		normalized_payload, payload_error = validate_message_payload_hex(payload)
-		if payload_error is not None or normalized_payload is None:
-			return None, payload_error or "payload is invalid"
-		validated_payload: str | dict[str, Any] = normalized_payload
+		if normalized_payload is None:
+			return None, f"payload is invalid: {payload_error}"
+		validated_payload: bytes = normalized_payload
 	else:
+		payload: dict[str, Any] = cast(dict[str, Any], raw_frame.get("payload"))
 		if not isinstance(payload, dict):
 			return None, f"payload must be a JSON object for type={frame_type}"
-		object_payload = cast("dict[str, Any]", payload)
 		if frame_type == "ack":
-			ack_for = object_payload.get("ack_for")
+			ack_for = payload.get("ack_for")
 			if not isinstance(ack_for, str):
 				return None, "ack payload must include ack_for as a string"
-			status = object_payload.get("status")
-			if status is not None and (not isinstance(status, str) or status not in VALID_ACK_STATUS_VALUES):
-				return None, "ack payload status must be one of received, processed, failed"
-		validated_payload = object_payload
+			status = payload.get("status")
+			if status is None or not isinstance(status, str) or status not in VALID_ACK_STATUS_VALUES:
+				return None, f"ack payload status must be one of {VALID_ACK_STATUS_VALUES}"
+		validated_payload = payload
 
 	return ParsedInboundFrame(
 		frame_type=frame_type,
+		client_msg_id=client_msg_id,
 		source=source,
 		destination=destination,
 		ack_required=ack_required,
-		payload=validated_payload,
-		client_msg_id=client_msg_id,
-		original_id=original_frame_id,
+		payload=validated_payload
 	), None
 
 
@@ -285,14 +261,14 @@ class ProtocolServer:
 		source: str,
 		destination: str,
 		ack_required: int,
-		payload: str | dict[str, Any],
+		payload: bytes | dict[str, Any],
 		client_msg_id: str | None = None,
 		frame_id: str | None = None,
 		timestamp: str | None = None,
 	) -> dict[str, Any]:
 		frame: dict[str, Any] = {
 			"type": frame_type,
-			"id": frame_id or generate_id(),
+			"id": frame_id or str(uuid7()),
 			"timestamp": timestamp or now_iso(),
 			"source": source,
 			"destination": destination,
@@ -308,7 +284,7 @@ class ProtocolServer:
 		if isinstance(payload, str):
 			payload_text = payload_to_store_text(payload)
 		elif isinstance(payload, dict):
-			payload_text = payload_to_store_text(cast("dict[str, Any]", payload))
+			payload_text = payload_to_store_text(cast(dict[str, Any], payload))
 		else:
 			payload_text = str(payload)
 		client_msg_id_value = frame.get("client_msg_id")
@@ -442,7 +418,7 @@ class ProtocolServer:
 					)
 				return
 
-		message_id = generate_id()
+		message_id = str(uuid7())
 		timestamp = now_iso()
 		canonical_message = self._build_frame(
 			frame_type="message",
@@ -645,7 +621,7 @@ class ProtocolServer:
 					)
 					continue
 
-				await self._process_frame(websocket, cast("dict[str, Any]", raw))
+				await self._process_frame(websocket, cast(dict[str, Any], raw))
 		except ConnectionClosed as exc:
 			logger.info("Connection closed: %s", exc)
 		finally:

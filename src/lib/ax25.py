@@ -52,7 +52,7 @@ class AX25FrameConfig:
 	representations as bytes.
 	"""
 
-	def __init__(self, dest_call: str, dest_ssid: int, src_call: str, src_ssid: int) -> None:
+	def __init__(self, dest_call: str = "N0CALL", dest_ssid: int = 0, src_call: str = "N0CALL", src_ssid: int = 0) -> None:
 		self._dest_call: str = dest_call.upper()
 		self._dest_ssid: int = dest_ssid
 		self._src_call: str = src_call.upper()
