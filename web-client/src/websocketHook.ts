@@ -296,8 +296,14 @@ export function usePlainSocket(url: string, sourceCallsign: string, destinationC
 	useEffect(() => {
 		const onPageHide = (): void => {
 			const websocket = websocketRef.current;
-			if (websocket !== null && websocket.readyState === WebSocket.OPEN) {
-				websocket.close();
+			if (websocket !== null) {
+				try {
+					if (websocket.readyState !== WebSocket.CLOSED) {
+						websocket.close();
+					}
+				} catch {
+					// ignore
+				}
 			}
 		};
 
@@ -341,9 +347,12 @@ export function usePlainSocket(url: string, sourceCallsign: string, destinationC
 
 		return () => {
 			disposed = true;
-
-			if (websocket.readyState === WebSocket.OPEN) {
-				websocket.close();
+			try {
+				if (websocket.readyState !== WebSocket.CLOSED) {
+					websocket.close();
+				}
+			} catch {
+				// ignore
 			}
 
 			if (websocketRef.current === websocket) {

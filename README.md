@@ -25,6 +25,12 @@ The current server implementation in `src/server.py` supports a practical subset
 - `PY_HAM_BBS_DB_PATH`: SQLite file path for protocol message/idempotency storage (default: `py_ham_bbs_protocol.db`).
 - `PY_HAM_BBS_SERVER_SOURCE`: Server source station id used for generated ACK/error frames (default: `SERVER-0`).
 
+### Server binding and public reachability
+
+- Default binding: `0.0.0.0:8765` — the protocol server listens on all network interfaces and is intended to be publicly reachable from the host's network addresses.
+
+This design makes the server accessible to remote clients (LAN or internet). When deploying on an untrusted network, place the server behind appropriate protections (firewalls, reverse proxies, TLS termination, authentication) and ensure you understand the security implications of exposing the service.
+
 If possible the radio should be in FM-D (FM Data) mode as audio goes through the DATA path (USB soundcard or ACC connector) which is flat, wide, and unprocessed (what AX.25 wants)
 
 ## GitHub Actions
