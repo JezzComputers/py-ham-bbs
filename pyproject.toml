@@ -27,7 +27,7 @@ possibly-missing-import = "warn"
 possibly-unresolved-reference = "warn"
 
 [tool.ty.environment]
-root = ["src", "src/lib"]
+root = ["src", "src/lib", ".venv/lib/python3.14/site-packages"]
 
 [tool.pyright]
 typeCheckingMode = "strict"

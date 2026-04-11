@@ -1,22 +1,42 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 @layer base {
-  :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-    --radius: 0.5rem;
-  }
+	:root {
+		--bg: #ffffff;
+		--fg: #09131f;
+	}
 
-  * {
-    @apply border-border;
-  }
+	@media (prefers-color-scheme: dark) {
+		:root {
+			--bg: #121212;
+			--fg: #e6eef7;
+		}
+	}
 
-  body {
-    @apply bg-background text-foreground;
-  }
+	:root.dark {
+		--bg: #121212;
+		--fg: #e6eef7;
+	}
+
+	:root.light {
+		--bg: #ffffff;
+		--fg: #09131f;
+	}
+
+	* {
+		box-sizing: border-box;
+	}
+
+	html,
+	body,
+	#root {
+		min-height: 100%;
+		margin: 0;
+	}
+
+	body {
+		font-family: "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
+		background: var(--bg);
+		color: var(--fg);
+	}
 }
