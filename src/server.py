@@ -211,8 +211,6 @@ def validate_message_payload_hex(payload: bytes) -> bytes:
 def payload_to_store_text(payload: bytes | dict[str, Any]) -> str:
 	if isinstance(payload, bytes):
 		return payload.hex()
-	# if isinstance(payload, str):
-	# 	return payload
 	return json.dumps(payload, separators=(",", ":"), sort_keys=True)
 
 
