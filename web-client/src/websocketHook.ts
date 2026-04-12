@@ -12,72 +12,20 @@ const FESC = 0xdb;
 const TFEND = 0xdc;
 const TFESC = 0xdd;
 const CALLSIGN_WITH_SSID_RE = /^([A-Z0-9]{1,6})-(\d{1,2})$/;
+const MAX_LOG_LINES = 300;
+const MAX_PAYLOAD_PREVIEW = 180;
+
+interface StationId {
+	callsign: string;
+	ssid: number;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
 }
 
-function parseTimeLabel(value: unknown): string {
-	if (typeof value !== "string") {
-		return new Date().toISOString();
-	}
-
-	const parsed = new Date(value);
-	if (Number.isNaN(parsed.getTime())) {
-		return value;
-	}
-
-	return parsed.toISOString();
-}
-
-function summarizePayload(payload: unknown): string {
-	if (typeof payload === "string") {
-		const decodedRadioText = decodeRadioPayload(payload);
-		if (decodedRadioText !== null) {
-			return `radio: ${decodedRadioText}`;
-		}
-		return payload;
-	}
-
-	if (!isRecord(payload)) {
-		return String(payload);
-	}
-
-	const subtype = payload.subtype;
-	const content = payload.content;
-	if (typeof subtype === "string" && isRecord(content) && typeof content.message === "string") {
-		return `${subtype}: ${content.message}`;
-	}
-
-	try {
-		const serialized = JSON.stringify(payload);
-		return serialized.length > 180 ? `${serialized.slice(0, 180)}...` : serialized;
-	} catch {
-		return "[payload unavailable]";
-	}
-}
-
-function formatPacketLog(direction: PacketDirection, packetText: string): string {
-	try {
-		const parsed = JSON.parse(packetText) as unknown;
-		if (!isRecord(parsed)) {
-			return `${new Date().toISOString()} ${direction} RAW ${packetText}`;
-		}
-
-		const time = parseTimeLabel(parsed.timestamp);
-		const type = typeof parsed.type === "string" ? parsed.type : "unknown";
-		const source = typeof parsed.source === "string" ? parsed.source : "?";
-		const destination = typeof parsed.destination === "string" ? parsed.destination : "?";
-		const ackRequired = typeof parsed.ack_required === "number" ? String(parsed.ack_required) : "?";
-		const payloadSummary = summarizePayload(parsed.payload);
-		return `${time} ${direction} ${type} ${source} -> ${destination} ack=${ackRequired} ${payloadSummary}`;
-	} catch {
-		return `${new Date().toISOString()} ${direction} RAW ${packetText}`;
-	}
-}
-
-function parseCallsignAndSsid(stationId: string): { callsign: string; ssid: number } | null {
-	const normalized = stationId.trim().toUpperCase();
+function normalizeStationId(value: string): string | null {
+	const normalized = value.trim().toUpperCase();
 	const match = CALLSIGN_WITH_SSID_RE.exec(normalized);
 	if (match === null) {
 		return null;
@@ -88,9 +36,23 @@ function parseCallsignAndSsid(stationId: string): { callsign: string; ssid: numb
 		return null;
 	}
 
+	return `${match[1]}-${ssid}`;
+}
+
+function parseStationId(stationId: string): StationId | null {
+	const normalized = normalizeStationId(stationId);
+	if (normalized === null) {
+		return null;
+	}
+
+	const match = CALLSIGN_WITH_SSID_RE.exec(normalized);
+	if (match === null) {
+		return null;
+	}
+
 	return {
 		callsign: match[1],
-		ssid,
+		ssid: Number.parseInt(match[2], 10),
 	};
 }
 
@@ -105,176 +67,190 @@ function encodeAddress(callsign: string, ssid: number, isLast: boolean): number[
 	return encoded;
 }
 
-function buildAx25Frame(text: string, sourceCallsign: string, destinationCallsign: string): Uint8Array | null {
-	const source = parseCallsignAndSsid(sourceCallsign);
-	const destination = parseCallsignAndSsid(destinationCallsign);
-	if (source === null || destination === null) {
-		return null;
-	}
-
-	const destinationAddress = encodeAddress(destination.callsign, destination.ssid, false);
-	const sourceAddress = encodeAddress(source.callsign, source.ssid, true);
-	const control = [0x03];
-	const pid = [0x01];
-	const payload = Array.from(new TextEncoder().encode(text));
-	return new Uint8Array([...destinationAddress, ...sourceAddress, ...control, ...pid, ...payload]);
-}
-
-function buildKissFrame(ax25Frame: Uint8Array): Uint8Array {
-	const output: number[] = [FEND, 0x00];
-	for (const byte of ax25Frame) {
-		if (byte === FEND) {
-			output.push(FESC, TFEND);
-			continue;
-		}
-		if (byte === FESC) {
-			output.push(FESC, TFESC);
-			continue;
-		}
-		output.push(byte);
-	}
-	output.push(FEND);
-	return new Uint8Array(output);
-}
-
 function bytesToHex(bytes: Uint8Array): string {
 	return Array.from(bytes)
 		.map((byte) => byte.toString(16).padStart(2, "0"))
 		.join("");
 }
 
-function hexToBytes(hex: string): Uint8Array | null {
-	if (hex.length % 2 !== 0 || !/^[0-9A-Fa-f]+$/.test(hex)) {
+function encodeMessagePayload(text: string, sourceStationId: string, destinationStationId: string): string | null {
+	const source = parseStationId(sourceStationId);
+	const destination = parseStationId(destinationStationId);
+	if (source === null || destination === null) {
 		return null;
 	}
 
-	const bytes = new Uint8Array(hex.length / 2);
-	for (let index = 0; index < bytes.length; index += 1) {
-		bytes[index] = Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16);
-	}
-	return bytes;
-}
+	const ax25: number[] = [
+		...encodeAddress(destination.callsign, destination.ssid, false),
+		...encodeAddress(source.callsign, source.ssid, true),
+		0x03,
+		0x01,
+		...Array.from(new TextEncoder().encode(text)),
+	];
 
-function decodeCall(address: Uint8Array): string {
-	const callsign = String.fromCharCode(...address.slice(0, 6).map((byte) => byte >> 1)).trim();
-	const ssid = (address[6] >> 1) & 0x0f;
-	return `${callsign}-${ssid}`;
-}
-
-function decodeKissFrame(kissFrame: Uint8Array): Uint8Array | null {
-	if (kissFrame.length < 4 || kissFrame[0] !== FEND || kissFrame[kissFrame.length - 1] !== FEND) {
-		return null;
-	}
-
-	const command = kissFrame[1] & 0x0f;
-	if (command !== 0x00) {
-		return null;
-	}
-
-	const payload = kissFrame.slice(2, -1);
-	const decoded: number[] = [];
-	for (let index = 0; index < payload.length; index += 1) {
-		const byte = payload[index];
-		if (byte === FESC && index + 1 < payload.length) {
-			const next = payload[index + 1];
-			if (next === TFEND) {
-				decoded.push(FEND);
-				index += 1;
-				continue;
-			}
-			if (next === TFESC) {
-				decoded.push(FESC);
-				index += 1;
-				continue;
-			}
+	const escapedKiss: number[] = [FEND, 0x00];
+	for (const byte of ax25) {
+		if (byte === FEND) {
+			escapedKiss.push(FESC, TFEND);
+			continue;
 		}
-		decoded.push(byte);
+		if (byte === FESC) {
+			escapedKiss.push(FESC, TFESC);
+			continue;
+		}
+		escapedKiss.push(byte);
 	}
-	return new Uint8Array(decoded);
+	escapedKiss.push(FEND);
+
+	return bytesToHex(new Uint8Array(escapedKiss));
 }
 
-function decodeRadioPayload(payloadHex: string): string | null {
-	const kissFrame = hexToBytes(payloadHex);
-	if (kissFrame === null) {
-		return null;
+function summarizePayload(payload: unknown): string {
+	if (typeof payload === "string") {
+		return payload.length > MAX_PAYLOAD_PREVIEW ? `${payload.slice(0, MAX_PAYLOAD_PREVIEW)}...` : payload;
 	}
 
-	const ax25Frame = decodeKissFrame(kissFrame);
-	if (ax25Frame === null || ax25Frame.length < 16) {
-		return null;
+	if (!isRecord(payload)) {
+		return String(payload);
 	}
 
-	let addressIndex = 0;
-	const addresses: Uint8Array[] = [];
-	while (addressIndex + 7 <= ax25Frame.length) {
-		const address = ax25Frame.slice(addressIndex, addressIndex + 7);
-		addresses.push(address);
-		addressIndex += 7;
-		if ((address[6] & 0x01) === 1) {
-			break;
+	try {
+		const serialized = JSON.stringify(payload);
+		return serialized.length > MAX_PAYLOAD_PREVIEW ? `${serialized.slice(0, MAX_PAYLOAD_PREVIEW)}...` : serialized;
+	} catch {
+		return "[payload unavailable]";
+	}
+}
+
+function formatPacketLog(direction: PacketDirection, packetText: string): string {
+	try {
+		const parsed = JSON.parse(packetText) as unknown;
+		if (!isRecord(parsed)) {
+			return `${new Date().toISOString()} ${direction} RAW ${packetText}`;
 		}
-	}
 
-	if (addresses.length < 2 || addressIndex + 2 > ax25Frame.length) {
-		return null;
+		const time = typeof parsed.timestamp === "string" ? parsed.timestamp : new Date().toISOString();
+		const type = typeof parsed.type === "string" ? parsed.type : "unknown";
+		const source = typeof parsed.source === "string" ? parsed.source : "?";
+		const destination = typeof parsed.destination === "string" ? parsed.destination : "?";
+		const ackRequired = typeof parsed.ack_required === "number" ? String(parsed.ack_required) : "?";
+		const payloadSummary = summarizePayload(parsed.payload);
+		return `${time} ${direction} ${type} ${source} -> ${destination} ack=${ackRequired} ${payloadSummary}`;
+	} catch {
+		return `${new Date().toISOString()} ${direction} RAW ${packetText}`;
 	}
-
-	const source = decodeCall(addresses[1]);
-	const destination = decodeCall(addresses[0]);
-	const payload = ax25Frame.slice(addressIndex + 2);
-	const text = new TextDecoder().decode(payload);
-	return `${source} -> ${destination} ${text}`;
 }
 
 function appendLine(current: string, line: string): string {
 	const updated = current === "" ? line : `${current}\n${line}`;
 	const lines = updated.split("\n");
-	if (lines.length <= 300) {
+	if (lines.length <= MAX_LOG_LINES) {
 		return updated;
 	}
-	return lines.slice(lines.length - 300).join("\n");
+	return lines.slice(lines.length - MAX_LOG_LINES).join("\n");
 }
 
-function toBindFrame(sourceCallsign: string): string {
+function toBindFrame(sourceCallsign: string): string | null {
+	const source = normalizeStationId(sourceCallsign);
+	if (source === null) {
+		return null;
+	}
+
 	return JSON.stringify({
 		type: "control",
-		source: sourceCallsign,
-		destination: sourceCallsign,
+		source,
+		destination: source,
 		ack_required: 0,
 		payload: {
 			subtype: "bind",
 			content: {
-				callsign: sourceCallsign,
+				callsign: source,
 			},
 		},
 	});
 }
 
-function toMessageFrame(text: string, sourceCallsign: string, destinationCallsign: string): string | null {
-	const ax25Frame = buildAx25Frame(text, sourceCallsign, destinationCallsign);
-	if (ax25Frame === null) {
+function toMessageFrame(text: string, sourceCallsign: string, destinationCallsign: string, clientMsgId: string): string | null {
+	const source = normalizeStationId(sourceCallsign);
+	const destination = normalizeStationId(destinationCallsign);
+	if (source === null || destination === null) {
 		return null;
 	}
 
-	const kissFrame = buildKissFrame(ax25Frame);
-	const payloadHex = bytesToHex(kissFrame);
+	const payloadHex = encodeMessagePayload(text, source, destination);
+	if (payloadHex === null) {
+		return null;
+	}
 
 	return JSON.stringify({
 		type: "message",
-		source: sourceCallsign,
-		destination: destinationCallsign,
+		client_msg_id: clientMsgId,
+		source,
+		destination: destination,
 		ack_required: 0,
 		payload: payloadHex,
 	});
 }
 
+function toAckFrame(incomingPacket: string, localSourceCallsign: string, clientMsgId: string): string | null {
+	let parsedUnknown: unknown;
+	try {
+		parsedUnknown = JSON.parse(incomingPacket) as unknown;
+	} catch {
+		return null;
+	}
+
+	if (!isRecord(parsedUnknown) || parsedUnknown.type !== "message") {
+		return null;
+	}
+
+	const ackRequired = parsedUnknown.ack_required;
+	if (typeof ackRequired !== "number" || ackRequired === 0) {
+		return null;
+	}
+
+	const ackFor = parsedUnknown.id;
+	const destinationSource = parsedUnknown.source;
+	if (typeof ackFor !== "string" || typeof destinationSource !== "string") {
+		return null;
+	}
+
+	const source = normalizeStationId(localSourceCallsign);
+	const destination = normalizeStationId(destinationSource);
+	if (source === null || destination === null) {
+		return null;
+	}
+
+	const payload: Record<string, unknown> = {
+		ack_for: ackFor,
+		status: "processed",
+	};
+	if (typeof parsedUnknown.client_msg_id === "string") {
+		payload.client_msg_id = parsedUnknown.client_msg_id;
+	}
+
+	return JSON.stringify({
+		type: "ack",
+		client_msg_id: clientMsgId,
+		source,
+		destination,
+		ack_required: 0,
+		payload,
+	});
+}
+
 export function usePlainSocket(url: string, sourceCallsign: string, destinationCallsign: string): PlainSocketState {
 	const websocketRef = useRef<WebSocket | null>(null);
+	const clientCounterRef = useRef(0);
 	const [inboundText, setInboundText] = useState("");
-	const [connectionCycle, setConnectionCycle] = useState(0);
 
 	const pushLog = useCallback((line: string): void => {
 		setInboundText((current) => appendLine(current, line));
+	}, []);
+
+	const nextClientMsgId = useCallback((): string => {
+		clientCounterRef.current += 1;
+		return `web-${Date.now()}-${clientCounterRef.current}`;
 	}, []);
 
 	const sendText = useCallback((text: string): void => {
@@ -284,57 +260,27 @@ export function usePlainSocket(url: string, sourceCallsign: string, destinationC
 			return;
 		}
 
-		const packet = toMessageFrame(text, sourceCallsign, destinationCallsign);
+		const packet = toMessageFrame(text, sourceCallsign, destinationCallsign, nextClientMsgId());
 		if (packet === null) {
 			pushLog(`${new Date().toISOString()} OUT DROP invalid-callsign`);
 			return;
 		}
 		websocket.send(packet);
 		pushLog(formatPacketLog("OUT", packet));
-	}, [destinationCallsign, pushLog, sourceCallsign]);
-
-	useEffect(() => {
-		const onPageHide = (): void => {
-			const websocket = websocketRef.current;
-			if (websocket !== null) {
-				try {
-					if (websocket.readyState !== WebSocket.CLOSED) {
-						websocket.close();
-					}
-				} catch {
-					// ignore
-				}
-			}
-		};
-
-		const onPageShow = (event: PageTransitionEvent): void => {
-			if (event.persisted) {
-				setConnectionCycle((current) => current + 1);
-			}
-		};
-
-		window.addEventListener("pagehide", onPageHide);
-		window.addEventListener("pageshow", onPageShow);
-
-		return () => {
-			window.removeEventListener("pagehide", onPageHide);
-			window.removeEventListener("pageshow", onPageShow);
-		};
-	}, []);
+	}, [destinationCallsign, nextClientMsgId, pushLog, sourceCallsign]);
 
 	useEffect(() => {
 		const websocket = new WebSocket(url);
-		let disposed = false;
 		websocketRef.current = websocket;
 
 		websocket.onopen = () => {
-			if (!disposed) {
-				const bindPacket = toBindFrame(sourceCallsign);
-				websocket.send(bindPacket);
-				pushLog(formatPacketLog("OUT", bindPacket));
+			const bindPacket = toBindFrame(sourceCallsign);
+			if (bindPacket === null) {
+				pushLog(`${new Date().toISOString()} OUT DROP invalid-callsign`);
 				return;
 			}
-			websocket.close();
+			websocket.send(bindPacket);
+			pushLog(formatPacketLog("OUT", bindPacket));
 		};
 
 		websocket.onmessage = (event) => {
@@ -343,10 +289,16 @@ export function usePlainSocket(url: string, sourceCallsign: string, destinationC
 			}
 
 			pushLog(formatPacketLog("IN", event.data));
+
+			const ackPacket = toAckFrame(event.data, sourceCallsign, nextClientMsgId());
+			if (ackPacket === null) {
+				return;
+			}
+			websocket.send(ackPacket);
+			pushLog(formatPacketLog("OUT", ackPacket));
 		};
 
 		return () => {
-			disposed = true;
 			try {
 				if (websocket.readyState !== WebSocket.CLOSED) {
 					websocket.close();
@@ -359,7 +311,7 @@ export function usePlainSocket(url: string, sourceCallsign: string, destinationC
 				websocketRef.current = null;
 			}
 		};
-	}, [connectionCycle, pushLog, sourceCallsign, url]);
+	}, [nextClientMsgId, pushLog, sourceCallsign, url]);
 
 	return {
 		inboundText,

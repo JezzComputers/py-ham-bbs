@@ -9,7 +9,7 @@ from websockets.asyncio.server import serve
 
 from lib.ax25 import AX25FrameBuilder, AX25FrameConfig
 from lib.kiss import KISSFrameBuilder, KISSFrameConfig
-from server import MessageStore, ProtocolServer, parse_inbound_frame
+from server import MessageRepository, MessageBrokerServer, parse_inbound_frame, InvalidFrameError
 
 
 def build_valid_kiss_payload_hex() -> str:
@@ -29,10 +29,8 @@ def test_parse_inbound_message_accepts_valid_frame() -> None:
 		"payload": build_valid_kiss_payload_hex(),
 	}
 
-	parsed, error = parse_inbound_frame(frame)
+	parsed = parse_inbound_frame(frame)
 
-	assert error is None
-	assert parsed is not None
 	assert parsed.frame_type == "message"
 	assert parsed.client_msg_id == "c1-0001"
 	assert parsed.source == "VK3XYZ-0"
@@ -49,10 +47,8 @@ def test_parse_inbound_unknown_ack_required_defaults_to_zero() -> None:
 		"payload": build_valid_kiss_payload_hex(),
 	}
 
-	parsed, error = parse_inbound_frame(frame)
+	parsed = parse_inbound_frame(frame)
 
-	assert error is None
-	assert parsed is not None
 	assert parsed.ack_required == 0
 
 
@@ -65,14 +61,14 @@ def test_parse_inbound_ack_requires_ack_for() -> None:
 		"payload": {"status": "received"},
 	}
 
-	parsed, error = parse_inbound_frame(frame)
+	with pytest.raises(InvalidFrameError) as excinfo:
+		parse_inbound_frame(frame)
 
-	assert parsed is None
-	assert error == "ack payload must include ack_for as a string"
+	assert str(excinfo.value) == "ack payload must include ack_for as a string"
 
 
 def test_store_keeps_first_mapping_for_source_and_client_msg_id(tmp_path: Path) -> None:
-	store = MessageStore(tmp_path / "protocol.db")
+	store = MessageRepository(tmp_path / "protocol.db")
 	store.save_frame(
 		server_id="019d5332-1b4c-743c-9821-25ca99a09f0a",
 		timestamp="2026-04-03T23:32:11.123456+11:00",
@@ -102,8 +98,8 @@ def test_store_keeps_first_mapping_for_source_and_client_msg_id(tmp_path: Path) 
 
 def test_protocol_server_routes_message_and_deduplicates_client_msg_id(tmp_path: Path) -> None:
 	async def run_test() -> None:
-		store = MessageStore(tmp_path / "protocol-flow.db")
-		protocol = ProtocolServer(store=store, server_source="SERVER-0")
+		store = MessageRepository(tmp_path / "protocol-flow.db")
+		protocol = MessageBrokerServer(store=store, server_source="SERVER-0")
 		try:
 			async with serve(protocol.handler, "127.0.0.1", 0) as ws_server:
 				sockets = ws_server.sockets
@@ -142,18 +138,33 @@ def test_protocol_server_routes_message_and_deduplicates_client_msg_id(tmp_path:
 					assert routed_frame["source"] == "VK3XYZ-0"
 					assert routed_frame["destination"] == "VK3ABC-0"
 
+					# canonical frame should include server-assigned id and timestamp
+					assert isinstance(routed_frame.get("id"), str)
+					assert isinstance(routed_frame.get("timestamp"), str)
+					# payload should be a hex string for message frames
+					assert isinstance(routed_frame.get("payload"), str)
+					assert routed_frame["payload"]
+
 					ack_raw = cast("str", await asyncio.wait_for(sender.recv(), 2))
 					ack_frame = cast("dict[str, object]", json.loads(ack_raw))
 					assert ack_frame["type"] == "ack"
+					# client correlation id should be present both top-level and in payload
+					assert ack_frame.get("client_msg_id") == "c1-0001"
 					ack_payload = cast("dict[str, object]", ack_frame["payload"])
 					assert ack_payload["status"] == "received"
 					first_ack_for = cast("str", ack_payload["ack_for"])
+
+					# server should have persisted mapping client_msg_id -> server id
+					assert store.get_server_id("VK3XYZ-0", "c1-0001") == first_ack_for
 
 					await sender.send(json.dumps(message_frame))
 					duplicate_ack_raw = cast("str", await asyncio.wait_for(sender.recv(), 2))
 					duplicate_ack_frame = cast("dict[str, object]", json.loads(duplicate_ack_raw))
 					duplicate_payload = cast("dict[str, object]", duplicate_ack_frame["payload"])
 					assert duplicate_payload["ack_for"] == first_ack_for
+					# duplicate ACK should also carry the client_msg_id top-level and in payload
+					assert duplicate_ack_frame.get("client_msg_id") == "c1-0001"
+					assert duplicate_payload.get("client_msg_id") == "c1-0001"
 
 					with pytest.raises(asyncio.TimeoutError):
 						await asyncio.wait_for(recipient.recv(), 0.4)

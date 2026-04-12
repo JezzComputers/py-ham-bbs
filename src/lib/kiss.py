@@ -15,6 +15,12 @@ _ESC_TFESC: bytes = bytes([FESC, TFESC])
 
 class KISSFrameConfig:
 	def __init__(self, kiss_command: int = 0x00) -> None:
+		"""Create a KISS frame configuration.
+
+		Raises:
+			InvalidKISSError: if `kiss_command` is not a single byte (0-255).
+		"""
+
 		if not (0 <= kiss_command <= 0xFF):
 			raise InvalidKISSError("KISS command must be exactly 1 byte")
 		self._kiss_command: int = kiss_command
@@ -25,6 +31,12 @@ class KISSFrameConfig:
 
 	@kiss_command.setter
 	def kiss_command(self, value: int) -> None:
+		"""Set the KISS command byte.
+
+		Raises:
+			InvalidKISSError: if `value` is not a single byte (0-255).
+		"""
+
 		if not (0 <= value <= 0xFF):
 			raise InvalidKISSError("KISS command must be exactly 1 byte")
 		self._kiss_command = value
@@ -48,7 +60,13 @@ class KISSFrameBuilder:
 		return bytes(out)
 
 	def decode_kiss_frame(self, kiss_frame: bytes) -> bytes:
-		"""Remove KISS framing and unescape. Raises InvalidKISSError on invalid input."""
+		"""Remove KISS framing and unescape.
+
+		Raises:
+			InvalidKISSError: when the KISS frame is malformed, too short,
+				uses a non-zero command, or contains unsupported command bytes.
+		"""
+
 		if len(kiss_frame) < 3 or kiss_frame[0] != FEND or kiss_frame[-1] != FEND:
 			raise InvalidKISSError(f"Invalid KISS frame: {kiss_frame.hex()}")
 

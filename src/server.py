@@ -9,7 +9,6 @@ from platform import python_version_tuple
 import re
 import sqlite3
 from typing import Any, Final, cast, Literal
-
 import asyncio
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
@@ -18,9 +17,17 @@ from lib.ax25 import AX25FrameBuilder, AX25FrameConfig, InvalidAX25Error, is_val
 from lib.kiss import InvalidKISSError, KISSFrameBuilder, KISSFrameConfig
 
 if int(python_version_tuple()[1]) < 14:
-	from uuid6 import uuid7  # pyright: ignore[reportMissingImports, reportUnknownVariableType]  # ty:ignore[unresolved-import]
+	from uuid6 import uuid7, UUID  # pyright: ignore[reportMissingImports, reportUnknownVariableType]
 else:
-	from uuid import uuid7  # ty:ignore[unresolved-import]
+	from uuid import uuid7, UUID  # ty:ignore[unresolved-import]
+
+
+class InvalidFrameError(ValueError):
+	"""Raised when an inbound frame fails validation/normalization."""
+
+
+class InvalidPayloadError(InvalidFrameError):
+	"""Raised when a message payload is invalid (bad KISS/AX.25, wrong format, etc.)."""
 
 
 logger = logging.getLogger(__name__)
@@ -42,28 +49,36 @@ except ZoneInfoNotFoundError:
 
 
 @dataclass(slots=True)
-class ParsedInboundFrame:
+class ValidatedInboundFrame:
+	"""Represents a validated and normalized inbound frame from a client, ready for processing."""
+
 	frame_type: FrameType
 	client_msg_id: str | None
 	source: str
 	destination: str
-	ack_required: int
+	ack_required: AckReqValues
 	payload: bytes | dict[str, Any]
 
 
 @dataclass(slots=True)
-class PendingAckState:
+class PendingAcknowledgementState:
+	"""Tracks the state of a message that has been sent with ack_required but is still awaiting acknowledgements from recipients."""
+
 	origin_websocket: ServerConnection
 	origin_source: str
-	ack_required: int
+	ack_required: AckReqValues
 	awaiting_sources: set[str]
 	client_msg_id: str | None
 
 
-class MessageStore:
+class MessageRepository:
+	"""Handles storage and retrieval of messages using SQLite."""
+
 	__slots__ = ("_connection",)
 
 	def __init__(self, db_path: Path) -> None:
+		"""Initialize the message repository, creating the database file and schema if necessary."""
+
 		db_path.parent.mkdir(parents=True, exist_ok=True)
 		self._connection = sqlite3.connect(db_path, check_same_thread=False)
 		self._connection.row_factory = sqlite3.Row
@@ -94,9 +109,13 @@ class MessageStore:
 			)
 
 	def close(self) -> None:
+		"""Close the database connection."""
+
 		self._connection.close()
 
 	def get_server_id(self, source: str, client_msg_id: str) -> str | None:
+		"""Retrieve the server_id for a given source and client_msg_id, or None if not found."""
+
 		row = self._connection.execute(
 			"""
 			SELECT server_id
@@ -115,7 +134,7 @@ class MessageStore:
 
 	def save_frame(
 		self,
-		server_id: uuid7,
+		server_id: UUID | str,
 		timestamp: str,
 		frame_type: FrameType,
 		source: str,
@@ -124,6 +143,8 @@ class MessageStore:
 		payload: str,
 		client_msg_id: str | None,
 	) -> None:
+		"""Save a message frame to the database. Uses INSERT OR IGNORE to prevent duplicate entries for the same source/client_msg_id."""
+
 		with self._connection:
 			self._connection.execute(
 				"""
@@ -136,12 +157,13 @@ class MessageStore:
 
 
 def now_iso() -> str:
+	"""Get the current timestamp in ISO 8601 format with local timezone. Falls back to UTC if local timezone is unavailable."""
+
 	return datetime.now(LOCAL_TIMEZONE).isoformat()
 
 
-def normalize_station_id(raw_value: object) -> str | None:
-	if not isinstance(raw_value, str):
-		return None
+def normalize_station_id(raw_value: str) -> str | None:
+	"""Normalize a raw station ID value to the standard all caps CALL-SSID format, or return None if invalid."""
 
 	match = CALLSIGN_WITH_SSID_RE.fullmatch(raw_value.strip().upper())
 	if match is None:
@@ -155,82 +177,111 @@ def normalize_station_id(raw_value: object) -> str | None:
 	return f"{callsign}-{ssid}"
 
 
-def normalize_ack_required(raw_value: AckReqValues) -> int:
+def normalize_ack_required(raw_value: AckReqValues | None) -> AckReqValues:
+	"""Normalize the ack_required value, ensuring it is one of the valid integers (0, 1, 2). Defaults to 0 if invalid."""
+
 	if raw_value in VALID_ACK_REQUIRED_VALUES:
 		return raw_value
 	return 0
 
 
-def validate_message_payload_hex(payload: bytes) -> tuple[bytes, None] | tuple[None, str]:
-	if not isinstance(payload, bytes):
-		return None, 'payload must be bytes (e.g. byte string b"<hex>") for type=message'
+def validate_message_payload_hex(payload: bytes) -> bytes:
+	"""Validate a KISS/AX.25 payload and return the validated bytes or raise InvalidPayloadError.
 
-	if payload is None or payload == b"":
-		return None, "payload cannot be empty"
+	Raises:
+		InvalidPayloadError: when payload is missing, malformed, or not a valid KISS/AX.25 frame.
+	"""
+
+	payload = bytes(payload)
+	if payload == b"":
+		raise InvalidPayloadError("payload cannot be empty")
 	if len(payload) < 19:
-		return None, "payload hex length must be greater than 19"
-
+		raise InvalidPayloadError("payload hex length must be greater than 19 (to accommodate minimal KISS/AX.25 frame)")
 	if payload[0] != 0xC0 or payload[-1] != 0xC0:
-		return None, "payload must include leading and trailing C0 (FEND) bytes"
+		raise InvalidPayloadError("payload must include leading and trailing C0 (FEND) bytes")
 
 	try:
 		AX25FrameBuilder(AX25FrameConfig()).decode_ax25_frame(KISSFrameBuilder(KISSFrameConfig()).decode_kiss_frame(payload))
 	except (InvalidKISSError, InvalidAX25Error) as e:
-		return None, f"payload is not a valid KISS/AX.25 frame: {e}"
+		raise InvalidPayloadError(f"payload is not a valid KISS/AX.25 frame: {e}") from e
 
-	return payload, None
+	return payload
 
 
 def payload_to_store_text(payload: bytes | dict[str, Any]) -> str:
 	if isinstance(payload, bytes):
 		return payload.hex()
+	# if isinstance(payload, str):
+	# 	return payload
 	return json.dumps(payload, separators=(",", ":"), sort_keys=True)
 
 
-def parse_inbound_frame(raw_frame: dict[str, Any]) -> tuple[ParsedInboundFrame, None] | tuple[None, str]:
+def parse_inbound_frame(raw_frame: dict[str, Any]) -> ValidatedInboundFrame:
+	"""Parse and validate an inbound raw frame.
+
+	Returns a `ValidatedInboundFrame` on success.
+
+	Raises:
+		InvalidFrameError: when the frame is malformed or fails validation
+		(invalid type, missing or malformed fields, invalid payload, etc.).
+	"""
+
 	frame_type = raw_frame.get("type")
 	if frame_type not in VALID_FRAME_TYPES:
-		return None, f"type must be one of {VALID_FRAME_TYPES}"
+		raise InvalidFrameError(f"type must be one of {VALID_FRAME_TYPES}")
+
 	client_msg_id = raw_frame.get("client_msg_id")
 	if client_msg_id is not None and not isinstance(client_msg_id, str):
-		return None, "client_msg_id must be a string when provided"
-	source = normalize_station_id(raw_frame.get("source"))
+		raise InvalidFrameError("client_msg_id must be a string when provided")
+
+	source = raw_frame.get("source")
+	if not isinstance(source, str):
+		raise InvalidFrameError("source must be a string")
+	source = normalize_station_id(source)
 	if source is None:
-		return None, "source must be a valid station id in CALL-SSID format"
-	destination = normalize_station_id(raw_frame.get("destination"))
+		raise InvalidFrameError("source must be a valid station id in CALL-SSID format")
+
+	destination = raw_frame.get("destination")
+	if not isinstance(destination, str):
+		raise InvalidFrameError("destination must be a string")
+	destination = normalize_station_id(destination)
 	if destination is None:
-		return None, "destination must be a valid station id in CALL-SSID format"
-	ack_required = normalize_ack_required(raw_frame.get("ack_required", 0))
+		raise InvalidFrameError("destination must be a valid station id in CALL-SSID format")
+
+	ack_required: AckReqValues = normalize_ack_required(raw_frame.get("ack_required", 0))
 
 	if frame_type == "message":
-		payload: bytes = cast(bytes, raw_frame.get("payload"))
-		if not isinstance(payload, bytes):
-			return None, f"payload must be a bytes object for type={frame_type}"
-		normalized_payload, payload_error = validate_message_payload_hex(payload)
-		if normalized_payload is None:
-			return None, f"payload is invalid: {payload_error}"
-		validated_payload: bytes = normalized_payload
+		payload = raw_frame.get("payload")
+		if isinstance(payload, str):
+			try:
+				payload_bytes = bytes.fromhex(payload)
+			except ValueError as e:
+				raise InvalidFrameError("payload must be a hex string or bytes for type=message") from e
+		else:
+			raise InvalidFrameError(f"payload must be a bytes object for type=message, got {type(payload).__name__}")
+		validated_payload = validate_message_payload_hex(payload_bytes)
 	else:
-		payload: dict[str, Any] = cast(dict[str, Any], raw_frame.get("payload"))
+		payload: object = raw_frame.get("payload")
 		if not isinstance(payload, dict):
-			return None, f"payload must be a JSON object for type={frame_type}"
+			raise InvalidFrameError(f"payload must be a JSON object for type={frame_type}")
+		payload = cast(dict[str, Any], payload)
 		if frame_type == "ack":
 			ack_for = payload.get("ack_for")
 			if not isinstance(ack_for, str):
-				return None, "ack payload must include ack_for as a string"
+				raise InvalidFrameError("ack payload must include ack_for as a string")
 			status = payload.get("status")
 			if status is None or not isinstance(status, str) or status not in VALID_ACK_STATUS_VALUES:
-				return None, f"ack payload status must be one of {VALID_ACK_STATUS_VALUES}"
+				raise InvalidFrameError(f"ack payload status must be one of {VALID_ACK_STATUS_VALUES}")
 		validated_payload = payload
 
-	return ParsedInboundFrame(
+	return ValidatedInboundFrame(
 		frame_type=frame_type,
 		client_msg_id=client_msg_id,
 		source=source,
 		destination=destination,
 		ack_required=ack_required,
-		payload=validated_payload
-	), None
+		payload=validated_payload,
+	)
 
 
 def resolve_db_path() -> Path:
@@ -247,20 +298,20 @@ def resolve_server_source() -> str:
 	return normalized
 
 
-class ProtocolServer:
-	def __init__(self, store: MessageStore, server_source: str) -> None:
+class MessageBrokerServer:
+	def __init__(self, store: MessageRepository, server_source: str) -> None:
 		self._store = store
 		self._server_source = server_source
 		self._bound_sources: dict[ServerConnection, str] = {}
 		self._routes: dict[str, set[ServerConnection]] = {}
-		self._pending_acks: dict[str, PendingAckState] = {}
+		self._pending_acks: dict[str, PendingAcknowledgementState] = {}
 
 	def _build_frame(
 		self,
 		frame_type: str,
 		source: str,
 		destination: str,
-		ack_required: int,
+		ack_required: AckReqValues,
 		payload: bytes | dict[str, Any],
 		client_msg_id: str | None = None,
 		frame_id: str | None = None,
@@ -277,25 +328,28 @@ class ProtocolServer:
 		}
 		if client_msg_id is not None:
 			frame["client_msg_id"] = client_msg_id
+		# Ensure payload is JSON-serializable for outgoing frames: represent bytes as hex string
+		if isinstance(frame["payload"], (bytes, bytearray)):
+			frame["payload"] = bytes(frame["payload"]).hex()
 		return frame
 
 	def _save_frame(self, frame: dict[str, Any]) -> None:
 		payload = frame["payload"]
 		if isinstance(payload, str):
-			payload_text = payload_to_store_text(payload)
+			payload_text = payload_to_store_text(bytes.fromhex(payload))
 		elif isinstance(payload, dict):
 			payload_text = payload_to_store_text(cast(dict[str, Any], payload))
 		else:
-			payload_text = str(payload)
+			raise InvalidPayloadError("payload must be a hex string or JSON object for storage")
 		client_msg_id_value = frame.get("client_msg_id")
 		client_msg_id = client_msg_id_value if isinstance(client_msg_id_value, str) else None
 		self._store.save_frame(
 			server_id=str(frame["id"]),
 			timestamp=str(frame["timestamp"]),
-			frame_type=str(frame["type"]),
+			frame_type=frame["type"],
 			source=str(frame["source"]),
 			destination=str(frame["destination"]),
-			ack_required=int(frame["ack_required"]),
+			ack_required=frame["ack_required"],
 			payload=payload_text,
 			client_msg_id=client_msg_id,
 		)
@@ -340,6 +394,49 @@ class ProtocolServer:
 
 	def _resolve_recipients(self, destination: str) -> set[ServerConnection]:
 		return set(self._routes.get(destination, set()))
+
+	def _create_canonical_frame(self, frame_type: str, parsed: ValidatedInboundFrame, frame_id: str | None = None, timestamp: str | None = None) -> dict[str, Any]:
+		"""Build, persist, and return the canonical frame for a parsed inbound frame."""
+
+		canonical = self._build_frame(
+			frame_type=frame_type,
+			source=parsed.source,
+			destination=parsed.destination,
+			ack_required=parsed.ack_required,
+			payload=parsed.payload,
+			client_msg_id=parsed.client_msg_id,
+			frame_id=frame_id,
+			timestamp=timestamp,
+		)
+		self._save_frame(canonical)
+		return canonical
+
+	async def _deliver_and_setup_pending(self, origin_ws: ServerConnection, origin_source: str, parsed: ValidatedInboundFrame, canonical: dict[str, Any]) -> set[str]:
+		"""Fanout a canonical frame and set up pending ack state when required.
+
+		Returns the set of delivered recipient sources.
+		"""
+
+		recipients = self._resolve_recipients(parsed.destination)
+		delivered = await self._fanout(recipients, canonical)
+		if parsed.ack_required != 0:
+			ack_status = "received" if delivered else "failed"
+			await self._send_acceptance_ack(
+				websocket=origin_ws,
+				destination=origin_source,
+				ack_for=str(canonical["id"]),
+				client_msg_id=parsed.client_msg_id,
+				status=ack_status,
+			)
+			if delivered:
+				self._pending_acks[str(canonical["id"])] = PendingAcknowledgementState(
+					origin_websocket=origin_ws,
+					origin_source=origin_source,
+					ack_required=parsed.ack_required,
+					awaiting_sources=delivered,
+					client_msg_id=parsed.client_msg_id,
+				)
+		return delivered
 
 	async def _fanout(self, recipients: set[ServerConnection], frame: dict[str, Any]) -> set[str]:
 		delivered_sources: set[str] = set()
@@ -392,10 +489,11 @@ class ProtocolServer:
 			destination=destination,
 			ack_required=0,
 			payload=payload,
+			client_msg_id=client_msg_id,
 		)
 		await self._send_frame(websocket, ack_frame)
 
-	async def _send_pending_status(self, state: PendingAckState, ack_for: str, status: str) -> None:
+	async def _send_pending_status(self, state: PendingAcknowledgementState, ack_for: str, status: str) -> None:
 		await self._send_acceptance_ack(
 			websocket=state.origin_websocket,
 			destination=state.origin_source,
@@ -404,7 +502,7 @@ class ProtocolServer:
 			status=status,
 		)
 
-	async def _handle_message(self, websocket: ServerConnection, frame: ParsedInboundFrame) -> None:
+	async def _handle_message(self, websocket: ServerConnection, frame: ValidatedInboundFrame) -> None:
 		if frame.client_msg_id is not None:
 			existing_server_id = self._store.get_server_id(frame.source, frame.client_msg_id)
 			if existing_server_id is not None:
@@ -420,40 +518,10 @@ class ProtocolServer:
 
 		message_id = str(uuid7())
 		timestamp = now_iso()
-		canonical_message = self._build_frame(
-			frame_type="message",
-			source=frame.source,
-			destination=frame.destination,
-			ack_required=frame.ack_required,
-			payload=frame.payload,
-			client_msg_id=frame.client_msg_id,
-			frame_id=message_id,
-			timestamp=timestamp,
-		)
-		self._save_frame(canonical_message)
+		canonical_message = self._create_canonical_frame("message", frame, frame_id=message_id, timestamp=timestamp)
+		await self._deliver_and_setup_pending(websocket, frame.source, frame, canonical_message)
 
-		recipients = self._resolve_recipients(frame.destination)
-		delivered_sources = await self._fanout(recipients, canonical_message)
-
-		if frame.ack_required != 0:
-			ack_status = "received" if delivered_sources else "failed"
-			await self._send_acceptance_ack(
-				websocket=websocket,
-				destination=frame.source,
-				ack_for=message_id,
-				client_msg_id=frame.client_msg_id,
-				status=ack_status,
-			)
-			if delivered_sources:
-				self._pending_acks[message_id] = PendingAckState(
-					origin_websocket=websocket,
-					origin_source=frame.source,
-					ack_required=frame.ack_required,
-					awaiting_sources=delivered_sources,
-					client_msg_id=frame.client_msg_id,
-				)
-
-	async def _handle_passthrough(self, websocket: ServerConnection, frame: ParsedInboundFrame) -> None:
+	async def _handle_passthrough(self, websocket: ServerConnection, frame: ValidatedInboundFrame) -> None:
 		if frame.client_msg_id is not None:
 			existing_server_id = self._store.get_server_id(frame.source, frame.client_msg_id)
 			if existing_server_id is not None:
@@ -467,38 +535,10 @@ class ProtocolServer:
 					)
 				return
 
-		canonical_frame = self._build_frame(
-			frame_type=frame.frame_type,
-			source=frame.source,
-			destination=frame.destination,
-			ack_required=frame.ack_required,
-			payload=frame.payload,
-			client_msg_id=frame.client_msg_id,
-		)
-		self._save_frame(canonical_frame)
+		canonical_frame = self._create_canonical_frame(frame.frame_type, frame)
+		await self._deliver_and_setup_pending(websocket, frame.source, frame, canonical_frame)
 
-		recipients = self._resolve_recipients(frame.destination)
-		delivered_sources = await self._fanout(recipients, canonical_frame)
-
-		if frame.ack_required != 0:
-			ack_status = "received" if delivered_sources else "failed"
-			await self._send_acceptance_ack(
-				websocket=websocket,
-				destination=frame.source,
-				ack_for=str(canonical_frame["id"]),
-				client_msg_id=frame.client_msg_id,
-				status=ack_status,
-			)
-			if delivered_sources:
-				self._pending_acks[str(canonical_frame["id"])] = PendingAckState(
-					origin_websocket=websocket,
-					origin_source=frame.source,
-					ack_required=frame.ack_required,
-					awaiting_sources=delivered_sources,
-					client_msg_id=frame.client_msg_id,
-				)
-
-	async def _handle_ack(self, frame: ParsedInboundFrame) -> None:
+	async def _handle_ack(self, frame: ValidatedInboundFrame) -> None:
 		if not isinstance(frame.payload, dict):
 			return
 
@@ -512,8 +552,9 @@ class ProtocolServer:
 			"ack_for": ack_for_value,
 			"status": incoming_status,
 		}
-		if frame.client_msg_id is not None:
-			ack_payload["client_msg_id"] = frame.client_msg_id
+		incoming_client_id = frame.payload.get("client_msg_id")
+		if isinstance(incoming_client_id, str):
+			ack_payload["client_msg_id"] = incoming_client_id
 
 		canonical_ack = self._build_frame(
 			frame_type="ack",
@@ -551,15 +592,17 @@ class ProtocolServer:
 		self._pending_acks.pop(ack_for_value, None)
 
 	async def _process_frame(self, websocket: ServerConnection, raw_frame: dict[str, Any]) -> None:
-		parsed_frame, parse_error = parse_inbound_frame(raw_frame)
-		source_hint = normalize_station_id(raw_frame.get("source"))
+		source_raw = raw_frame.get("source")
+		source_hint = normalize_station_id(source_raw if isinstance(source_raw, str) else "")
 		original_id = raw_frame.get("id") if isinstance(raw_frame.get("id"), str) else None
 		original_client_msg_id = raw_frame.get("client_msg_id") if isinstance(raw_frame.get("client_msg_id"), str) else None
 
-		if parsed_frame is None:
+		try:
+			parsed_frame = parse_inbound_frame(raw_frame)
+		except InvalidFrameError as exc:
 			await self._send_error(
 				websocket=websocket,
-				message=parse_error or "Invalid message format",
+				message=str(exc) or "Invalid message format",
 				original_id=original_id,
 				original_client_msg_id=original_client_msg_id,
 				source_hint=source_hint,
@@ -571,7 +614,7 @@ class ProtocolServer:
 			await self._send_error(
 				websocket=websocket,
 				message=f"source is bound to {bound_source} for this session",
-				original_id=parsed_frame.original_id,
+				original_id=original_id,
 				original_client_msg_id=parsed_frame.client_msg_id,
 				source_hint=parsed_frame.source,
 			)
@@ -632,15 +675,15 @@ class ProtocolServer:
 async def main() -> None:
 	db_path = resolve_db_path()
 	server_source = resolve_server_source()
-	store = MessageStore(db_path)
-	protocol_server = ProtocolServer(store, server_source)
+	store = MessageRepository(db_path)
+	protocol_server = MessageBrokerServer(store, server_source)
 
 	logger.info("Using protocol store: %s", db_path)
 	logger.info("Server source identity: %s", server_source)
 
 	try:
 		async with serve(protocol_server.handler, "0.0.0.0", 8765) as server:  # noqa: S104
-			print("Protocol server started on ws://0.0.0.0:8765")
+			logger.info("Protocol server started on ws://0.0.0.0:8765")
 			await server.serve_forever()
 	finally:
 		store.close()

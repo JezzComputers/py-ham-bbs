@@ -34,6 +34,7 @@ def kiss_connect(host: str = "127.0.0.1", port: int = 8001) -> socket.socket:
 
 def send_frame(sock: socket.socket, text: str, ax25_builder: AX25FrameBuilder, kiss_builder: KISSFrameBuilder) -> None:
 	"""Build a KISS frame from `text` then add AX.25 and send it to Direwolf."""
+
 	payload: bytes = text.encode("utf-8")
 	frame: bytes = ax25_builder.build_ax25_frame(payload)
 	kiss_frame: bytes = kiss_builder.build_kiss_frame(frame)
