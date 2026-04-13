@@ -330,8 +330,8 @@ def main() -> None:
 		if remote_now and should_disconnect:
 			client.disconnect_station(my_call, remote_now)
 		client.unregister_callsign(my_call)
-	except (InvalidAGWError, OSError):
-		pass
+	except (InvalidAGWError, OSError) as e:
+		print(f"{BRIGHT_BLACK}Cleanup warning (ignored):{RESET} {e}")
 	finally:
 		with contextlib.suppress(OSError):
 			client.close()
