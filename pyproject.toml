@@ -58,7 +58,7 @@ ignore = [
 	"TRY",    # exception message rules
 	"EM",     # exception literal rules
 	"B028",   # warnings stacklevel
-	"I001",   # import block formating
+	"I001",   # import block formatting
 	"INP",    # implicit namespace package
 	"S101",   # assert in tests
 	"C90",    # complexity rules
