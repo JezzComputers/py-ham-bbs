@@ -62,7 +62,7 @@ ignore = [
 	"INP",    # implicit namespace package
 	"S101",   # assert in tests
 	"C90",    # complexity rules
-	"W191",   # alow tabs for indentation
+	"W191",   # allow tabs for indentation
 	"ERA",    # allow commented-out code
 	"E501",   # allow long lines
 	"COM812", # avoid formatter conflict warnings
