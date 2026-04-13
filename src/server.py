@@ -40,7 +40,7 @@ AckStatValues = Literal["received", "processed", "failed"]
 VALID_ACK_STATUS_VALUES: Final[frozenset[AckStatValues]] = frozenset({"received", "processed", "failed"})
 CALLSIGN_WITH_SSID_RE: Final[re.Pattern[str]] = re.compile(r"^([A-Z0-9]{1,6})-(\d{1,2})$")
 DEFAULT_SERVER_SOURCE: Final[str] = "SERVER-0"
-DEFAULT_DB_PATH: Final[str] = "py_ham_bbs_log.db"
+DEFAULT_DB_PATH: Final[str] = "py_ham_bbs_protocol.db"
 try:
 	LOCAL_TIMEZONE: Final[tzinfo] = ZoneInfo("Australia/Melbourne")
 except ZoneInfoNotFoundError:
