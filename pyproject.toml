@@ -13,6 +13,10 @@ dependencies = ["websockets", "uuid6; python_version < '3.14'"]
 [dependency-groups]
 dev = ["pyright", "ty", "pytest", "ruff"]
 
+# Install with uv sync --upgrade --extra=uuid
+[project.optional-dependencies]
+uuid = ["uuid6"]
+
 [tool.pytest.ini_options]
 minversion = "9.0"
 addopts = ["-ra", "--strict-config", "-v"]
