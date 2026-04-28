@@ -13,8 +13,9 @@ import asyncio
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
-from lib.ax25 import AX25FrameBuilder, AX25FrameConfig, InvalidAX25Error, is_valid_callsign
-from lib.kiss import InvalidKISSError, KISSFrameBuilder, KISSFrameConfig
+from lib.ax25 import InvalidAX25Error, is_valid_callsign
+from lib.direwolf import DEFAULT_KISS_HOST, DEFAULT_KISS_PORT, DirewolfKISSClient, validate_kiss_payload
+from lib.kiss import InvalidKISSError
 
 if int(python_version_tuple()[1]) < 14:
 	from uuid6 import uuid7, UUID  # pyright: ignore[reportMissingImports, reportUnknownVariableType]
@@ -41,6 +42,9 @@ VALID_ACK_STATUS_VALUES: Final[frozenset[AckStatValues]] = frozenset({"received"
 CALLSIGN_WITH_SSID_RE: Final[re.Pattern[str]] = re.compile(r"^([A-Z0-9]{1,6})-(\d{1,2})$")
 DEFAULT_SERVER_SOURCE: Final[str] = "SERVER-0"
 DEFAULT_DB_PATH: Final[str] = "py_ham_bbs_protocol.db"
+DIREWOLF_ENABLED_ENV: Final[str] = "PY_HAM_BBS_DIREWOLF_ENABLED"
+DIREWOLF_HOST_ENV: Final[str] = "PY_HAM_BBS_DIREWOLF_HOST"
+DIREWOLF_PORT_ENV: Final[str] = "PY_HAM_BBS_DIREWOLF_PORT"
 try:
 	LOCAL_TIMEZONE: Final[tzinfo] = ZoneInfo("Australia/Melbourne")
 except ZoneInfoNotFoundError:
@@ -192,20 +196,12 @@ def validate_message_payload_hex(payload: bytes) -> bytes:
 		InvalidPayloadError: when payload is missing, malformed, or not a valid KISS/AX.25 frame.
 	"""
 
-	payload = bytes(payload)
-	if payload == b"":
-		raise InvalidPayloadError("payload cannot be empty")
-	if len(payload) < 19:
-		raise InvalidPayloadError("payload hex length must be greater than 19 (to accommodate minimal KISS/AX.25 frame)")
-	if payload[0] != 0xC0 or payload[-1] != 0xC0:
-		raise InvalidPayloadError("payload must include leading and trailing C0 (FEND) bytes")
-
 	try:
-		AX25FrameBuilder(AX25FrameConfig()).decode_ax25_frame(KISSFrameBuilder(KISSFrameConfig()).decode_kiss_frame(payload))
+		return validate_kiss_payload(payload)
+	except ValueError as e:
+		raise InvalidPayloadError(str(e)) from e
 	except (InvalidKISSError, InvalidAX25Error) as e:
 		raise InvalidPayloadError(f"payload is not a valid KISS/AX.25 frame: {e}") from e
-
-	return payload
 
 
 def payload_to_store_text(payload: bytes | dict[str, Any]) -> str:
@@ -296,10 +292,30 @@ def resolve_server_source() -> str:
 	return normalized
 
 
+def resolve_direwolf_client() -> DirewolfKISSClient | None:
+	enabled_raw = os.getenv(DIREWOLF_ENABLED_ENV, "1")
+	if enabled_raw.strip().lower() not in {"1", "true", "yes", "on"}:
+		return None
+
+	host = os.getenv(DIREWOLF_HOST_ENV, DEFAULT_KISS_HOST)
+	port_raw = os.getenv(DIREWOLF_PORT_ENV, str(DEFAULT_KISS_PORT))
+	try:
+		port = int(port_raw)
+	except ValueError:
+		logger.warning("Invalid %s=%s; using %s", DIREWOLF_PORT_ENV, port_raw, DEFAULT_KISS_PORT)
+		port = DEFAULT_KISS_PORT
+	if port <= 0 or port > 65535:
+		logger.warning("Invalid %s=%s; using %s", DIREWOLF_PORT_ENV, port, DEFAULT_KISS_PORT)
+		port = DEFAULT_KISS_PORT
+
+	return DirewolfKISSClient(host=host, port=port)
+
+
 class MessageBrokerServer:
-	def __init__(self, store: MessageRepository, server_source: str) -> None:
+	def __init__(self, store: MessageRepository, server_source: str, direwolf_client: DirewolfKISSClient | None = None) -> None:
 		self._store = store
 		self._server_source = server_source
+		self._direwolf_client = direwolf_client
 		self._bound_sources: dict[ServerConnection, str] = {}
 		self._routes: dict[str, set[ServerConnection]] = {}
 		self._pending_acks: dict[str, PendingAcknowledgementState] = {}
@@ -447,6 +463,14 @@ class MessageBrokerServer:
 				await self._remove_connection(recipient)
 		return delivered_sources
 
+	async def _send_to_direwolf(self, payload: bytes, source: str, destination: str) -> None:
+		if self._direwolf_client is None:
+			return
+		try:
+			await asyncio.to_thread(self._direwolf_client.send_kiss_frame, payload)
+		except OSError as exc:
+			logger.warning("Direwolf send failed for %s -> %s: %s", source, destination, exc)
+
 	async def _send_error(
 		self,
 		websocket: ServerConnection,
@@ -517,6 +541,8 @@ class MessageBrokerServer:
 		message_id = str(uuid7())
 		timestamp = now_iso()
 		canonical_message = self._create_canonical_frame("message", frame, frame_id=message_id, timestamp=timestamp)
+		if isinstance(frame.payload, (bytes, bytearray)):
+			await self._send_to_direwolf(bytes(frame.payload), frame.source, frame.destination)
 		await self._deliver_and_setup_pending(websocket, frame.source, frame, canonical_message)
 
 	async def _handle_passthrough(self, websocket: ServerConnection, frame: ValidatedInboundFrame) -> None:
@@ -671,20 +697,29 @@ class MessageBrokerServer:
 
 
 async def main() -> None:
+	logging.basicConfig(level=logging.INFO)
+	logger.info("Started")
 	db_path = resolve_db_path()
 	server_source = resolve_server_source()
 	store = MessageRepository(db_path)
-	protocol_server = MessageBrokerServer(store, server_source)
+	direwolf_client = resolve_direwolf_client()
+	protocol_server = MessageBrokerServer(store, server_source, direwolf_client=direwolf_client)
 
 	logger.info("Using protocol store: %s", db_path)
 	logger.info("Server source identity: %s", server_source)
+	if direwolf_client is not None:
+		logger.info("Direwolf KISS enabled: %s:%s", direwolf_client.host, direwolf_client.port)
 
 	try:
 		async with serve(protocol_server.handler, "0.0.0.0", 8765) as server:  # noqa: S104
 			logger.info("Protocol server started on ws://0.0.0.0:8765")
+			print("Protocol server started on ws://0.0.0.0:8765")
 			await server.serve_forever()
 	finally:
+		if direwolf_client is not None:
+			direwolf_client.close()
 		store.close()
+		logger.info("Exited")
 
 
 if __name__ == "__main__":

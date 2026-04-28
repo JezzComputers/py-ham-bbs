@@ -6,7 +6,7 @@ Tools and configuration files for building a lightweight ham radio packet BBS ma
 
 ## Documentation
 
-WebSocket Message Protocol can be found [here](https://github.com/jezza5400-org/py-ham-bbs/wiki/08%E2%80%90WebSocket-Message-Protocol).
+WebSocket Message Protocol can be found at the [WebSocket-Message-Protocol wiki](https://github.com/jezza5400-org/py-ham-bbs/wiki/08%E2%80%90WebSocket-Message-Protocol) page.
 
 ## Implemented Protocol Subset
 
@@ -24,6 +24,9 @@ The current server implementation in `src/server.py` supports a practical subset
 
 - `PY_HAM_BBS_DB_PATH`: SQLite file path for protocol message/idempotency storage (default: `py_ham_bbs_protocol.db`).
 - `PY_HAM_BBS_SERVER_SOURCE`: Server source station id used for generated ACK/error frames (default: `SERVER-0`).
+- `PY_HAM_BBS_DIREWOLF_ENABLED`: Enable Direwolf KISS forwarding (default: `1`, set to `0`/`false` to disable).
+- `PY_HAM_BBS_DIREWOLF_HOST`: Direwolf KISS host (default: `127.0.0.1`).
+- `PY_HAM_BBS_DIREWOLF_PORT`: Direwolf KISS port (default: `8001`).
 
 ### Server binding and public reachability
 
