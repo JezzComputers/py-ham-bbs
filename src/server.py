@@ -45,6 +45,7 @@ DEFAULT_DB_PATH: Final[str] = "py_ham_bbs_protocol.db"
 DIREWOLF_ENABLED_ENV: Final[str] = "PY_HAM_BBS_DIREWOLF_ENABLED"
 DIREWOLF_HOST_ENV: Final[str] = "PY_HAM_BBS_DIREWOLF_HOST"
 DIREWOLF_PORT_ENV: Final[str] = "PY_HAM_BBS_DIREWOLF_PORT"
+PENDING_ACK_TIMEOUT_SECONDS: Final[float] = 30.0
 try:
 	LOCAL_TIMEZONE: Final[tzinfo] = ZoneInfo("Australia/Melbourne")
 except ZoneInfoNotFoundError:
@@ -73,6 +74,7 @@ class PendingAcknowledgementState:
 	ack_required: AckReqValues
 	awaiting_sources: set[str]
 	client_msg_id: str | None
+	timeout_task: asyncio.Task[None] | None
 
 
 class MessageRepository:
@@ -198,10 +200,10 @@ def validate_message_payload_hex(payload: bytes) -> bytes:
 
 	try:
 		return validate_kiss_payload(payload)
-	except ValueError as e:
-		raise InvalidPayloadError(str(e)) from e
 	except (InvalidKISSError, InvalidAX25Error) as e:
 		raise InvalidPayloadError(f"payload is not a valid KISS/AX.25 frame: {e}") from e
+	except ValueError as e:
+		raise InvalidPayloadError(str(e)) from e
 
 
 def payload_to_store_text(payload: bytes | dict[str, Any]) -> str:
@@ -250,9 +252,9 @@ def parse_inbound_frame(raw_frame: dict[str, Any]) -> ValidatedInboundFrame:
 			try:
 				payload_bytes = bytes.fromhex(payload)
 			except ValueError as e:
-				raise InvalidFrameError("payload must be a hex string or bytes for type=message") from e
+				raise InvalidFrameError("payload must be a hex string for type=message") from e
 		else:
-			raise InvalidFrameError(f"payload must be a bytes object for type=message, got {type(payload).__name__}")
+			raise InvalidFrameError(f"payload must be a hex string for type=message, got {type(payload).__name__}")
 		validated_payload = validate_message_payload_hex(payload_bytes)
 	else:
 		payload: object = raw_frame.get("payload")
@@ -399,15 +401,39 @@ class MessageBrokerServer:
 
 		for message_id, state in list(self._pending_acks.items()):
 			if state.origin_websocket is websocket:
-				self._pending_acks.pop(message_id, None)
+				self._pop_pending_ack(message_id)
 				continue
 			if bound_source is not None and bound_source in state.awaiting_sources:
 				state.awaiting_sources.discard(bound_source)
 				await self._send_pending_status(state, message_id, "failed")
-				self._pending_acks.pop(message_id, None)
+				self._pop_pending_ack(message_id)
 
 	def _resolve_recipients(self, destination: str) -> set[ServerConnection]:
 		return set(self._routes.get(destination, set()))
+
+	def _cancel_pending_timeout(self, state: PendingAcknowledgementState) -> None:
+		timeout_task = state.timeout_task
+		if timeout_task is None:
+			return
+		if not timeout_task.done():
+			timeout_task.cancel()
+
+	def _pop_pending_ack(self, message_id: str) -> PendingAcknowledgementState | None:
+		state = self._pending_acks.pop(message_id, None)
+		if state is not None:
+			self._cancel_pending_timeout(state)
+		return state
+
+	async def _expire_pending_ack(self, message_id: str) -> None:
+		try:
+			await asyncio.sleep(PENDING_ACK_TIMEOUT_SECONDS)
+		except asyncio.CancelledError:
+			return
+		state = self._pending_acks.get(message_id)
+		if state is None:
+			return
+		await self._send_pending_status(state, message_id, "failed")
+		self._pop_pending_ack(message_id)
 
 	def _create_canonical_frame(self, frame_type: str, parsed: ValidatedInboundFrame, frame_id: str | None = None, timestamp: str | None = None) -> dict[str, Any]:
 		"""Build, persist, and return the canonical frame for a parsed inbound frame."""
@@ -443,13 +469,17 @@ class MessageBrokerServer:
 				status=ack_status,
 			)
 			if delivered:
-				self._pending_acks[str(canonical["id"])] = PendingAcknowledgementState(
+				message_id = str(canonical["id"])
+				state = PendingAcknowledgementState(
 					origin_websocket=origin_ws,
 					origin_source=origin_source,
 					ack_required=parsed.ack_required,
 					awaiting_sources=delivered,
 					client_msg_id=parsed.client_msg_id,
+					timeout_task=None,
 				)
+				self._pending_acks[message_id] = state
+				state.timeout_task = asyncio.create_task(self._expire_pending_ack(message_id))
 		return delivered
 
 	async def _fanout(self, recipients: set[ServerConnection], frame: dict[str, Any]) -> set[str]:
@@ -597,7 +627,7 @@ class MessageBrokerServer:
 
 		if incoming_status == "failed":
 			await self._send_pending_status(pending_state, ack_for_value, "failed")
-			self._pending_acks.pop(ack_for_value, None)
+			self._pop_pending_ack(ack_for_value)
 			return
 
 		if frame.source in pending_state.awaiting_sources:
@@ -605,7 +635,7 @@ class MessageBrokerServer:
 
 		if pending_state.ack_required == 1:
 			await self._send_pending_status(pending_state, ack_for_value, "processed")
-			self._pending_acks.pop(ack_for_value, None)
+			self._pop_pending_ack(ack_for_value)
 			return
 
 		if pending_state.awaiting_sources:
@@ -613,7 +643,7 @@ class MessageBrokerServer:
 			return
 
 		await self._send_pending_status(pending_state, ack_for_value, "processed")
-		self._pending_acks.pop(ack_for_value, None)
+		self._pop_pending_ack(ack_for_value)
 
 	async def _process_frame(self, websocket: ServerConnection, raw_frame: dict[str, Any]) -> None:
 		source_raw = raw_frame.get("source")

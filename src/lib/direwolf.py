@@ -100,7 +100,7 @@ def validate_kiss_payload(payload: bytes) -> bytes:
 	if payload == b"":
 		raise ValueError("payload cannot be empty")
 	if len(payload) < MIN_KISS_AX25_LEN:
-		raise ValueError("payload hex length must be greater than 19 (to accommodate minimal KISS/AX.25 frame)")
+		raise ValueError("payload length must be greater than 19 bytes (to accommodate minimal KISS/AX.25 frame)")
 	if payload[0] != FEND or payload[-1] != FEND:
 		raise ValueError("payload must include leading and trailing C0 (FEND) bytes")
 

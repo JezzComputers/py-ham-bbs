@@ -172,3 +172,84 @@ def test_protocol_server_routes_message_and_deduplicates_client_msg_id(tmp_path:
 			store.close()
 
 	asyncio.run(run_test())
+
+
+def test_protocol_server_processes_recipient_ack(tmp_path: Path) -> None:
+	async def run_test() -> None:
+		store = MessageRepository(tmp_path / "protocol-ack.db")
+		protocol = MessageBrokerServer(store=store, server_source="SERVER-0")
+		try:
+			async with serve(protocol.handler, "127.0.0.1", 0) as ws_server:
+				sockets = ws_server.sockets
+				assert sockets is not None
+				assert len(sockets) > 0
+				port = int(sockets[0].getsockname()[1])
+				url = f"ws://127.0.0.1:{port}"
+
+				async with connect(url) as sender, connect(url) as recipient:
+					bind_frame = {
+						"type": "control",
+						"source": "VK3ABC-0",
+						"destination": "VK3XYZ-0",
+						"ack_required": 0,
+						"payload": {
+							"subtype": "bind",
+							"content": {"ready": True},
+						},
+					}
+					await recipient.send(json.dumps(bind_frame))
+
+					message_frame = {
+						"type": "message",
+						"client_msg_id": "c1-0100",
+						"source": "VK3XYZ-0",
+						"destination": "VK3ABC-0",
+						"ack_required": 2,
+						"payload": build_valid_kiss_payload_hex(),
+					}
+
+					await sender.send(json.dumps(message_frame))
+
+					routed_raw = cast("str", await asyncio.wait_for(recipient.recv(), 2))
+					routed_frame = cast("dict[str, object]", json.loads(routed_raw))
+					ack_for = cast("str", routed_frame["id"])
+
+					acceptance_raw = cast("str", await asyncio.wait_for(sender.recv(), 2))
+					acceptance_frame = cast("dict[str, object]", json.loads(acceptance_raw))
+					acceptance_payload = cast("dict[str, object]", acceptance_frame["payload"])
+					assert acceptance_payload["ack_for"] == ack_for
+					assert acceptance_payload["status"] == "received"
+
+					recipient_ack = {
+						"type": "ack",
+						"source": "VK3ABC-0",
+						"destination": "VK3XYZ-0",
+						"ack_required": 0,
+						"payload": {
+							"ack_for": ack_for,
+							"status": "processed",
+						},
+					}
+					await recipient.send(json.dumps(recipient_ack))
+
+					ack_one_raw = cast("str", await asyncio.wait_for(sender.recv(), 2))
+					ack_two_raw = cast("str", await asyncio.wait_for(sender.recv(), 2))
+					frames = [
+						cast("dict[str, object]", json.loads(ack_one_raw)),
+						cast("dict[str, object]", json.loads(ack_two_raw)),
+					]
+					by_source = {cast("str", frame["source"]): frame for frame in frames}
+					assert "VK3ABC-0" in by_source
+					assert "SERVER-0" in by_source
+
+					forwarded_payload = cast("dict[str, object]", by_source["VK3ABC-0"]["payload"])
+					assert forwarded_payload["ack_for"] == ack_for
+					assert forwarded_payload["status"] == "processed"
+
+					server_payload = cast("dict[str, object]", by_source["SERVER-0"]["payload"])
+					assert server_payload["ack_for"] == ack_for
+					assert server_payload["status"] == "processed"
+		finally:
+			store.close()
+
+	asyncio.run(run_test())
