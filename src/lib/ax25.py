@@ -62,7 +62,7 @@ class AX25FrameConfig:
 	representations as bytes.
 	"""
 
-	def __init__(self, dest_call: str = "N0CALL", dest_ssid: int = 0, src_call: str = "N0CALL", src_ssid: int = 0) -> None:
+	def __init__(self, dest_call: str, dest_ssid: int, src_call: str, src_ssid: int) -> None:
 		self._dest_call: str = dest_call.upper()
 		self._dest_ssid: int = dest_ssid
 		self._src_call: str = src_call.upper()
@@ -134,15 +134,14 @@ class AX25FrameBuilder:
 		compressed: bytes = zlib.compress(payload, level=9, wbits=15)
 		return self.config.dest_frame + self.config.src_frame + bytes([self.control]) + bytes([self.pid]) + (compressed if len(compressed) < len(payload) else payload)
 
-	def decode_ax25_frame(self, ax25_frame: bytes) -> tuple[str, str, str]:
-		"""Decode an AX.25 frame and return (dest, src, text).
-
-		Decodes an AX.25 frame from bytes, extracting and returning the
+	@staticmethod
+	def decode_ax25_frame(ax25_frame: bytes) -> tuple[str, str, str]:
+		"""Decodes an AX.25 frame from bytes, extracting and returning the
 		destination callsign, source callsign, and UTF-8 decoded payload text.
 
 		Raises:
-			InvalidAX25Error: if the frame is truncated, addresses are
-				invalid or insufficient, or other structural problems occur.
+			InvalidAX25Error: if the frame is truncated, addresses are invalid or insufficient,
+			or other structural problems occur.
 		"""
 
 		# Minimal AX.25 length: two 7-byte addresses + CONTROL + PID = 16

@@ -1,42 +1,50 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-
-export interface PlainSocketState {
-	inboundText: string;
-	sendText: (text: string) => void;
-}
-
-type PacketDirection = "IN" | "OUT";
-
 const FEND = 0xc0;
 const FESC = 0xdb;
 const TFEND = 0xdc;
 const TFESC = 0xdd;
 const CALLSIGN_WITH_SSID_RE = /^([A-Z0-9]{1,6})-(\d{1,2})$/;
-const MAX_LOG_LINES = 300;
 const MAX_PAYLOAD_PREVIEW = 180;
+
+type PacketDirection = "IN" | "OUT";
+
+interface SocketCallbacks {
+	onLogLine: (line: string) => void;
+	onStatus: (line: string) => void;
+}
 
 interface StationId {
 	callsign: string;
 	ssid: number;
 }
 
+interface SocketClient {
+	setRoute: (sourceCallsign: string, destinationCallsign: string) => void;
+	sendText: (text: string) => void;
+	dispose: () => void;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
 }
 
-function normalizeStationId(value: string): string | null {
+export function normalizeStationId(value: string): string | null {
 	const normalized = value.trim().toUpperCase();
 	const match = CALLSIGN_WITH_SSID_RE.exec(normalized);
 	if (match === null) {
 		return null;
 	}
 
-	const ssid = Number.parseInt(match[2], 10);
+	const callsign = match[1];
+	const ssidText = match[2];
+	if (callsign === undefined || ssidText === undefined) {
+		return null;
+	}
+	const ssid = Number.parseInt(ssidText, 10);
 	if (Number.isNaN(ssid) || ssid < 0 || ssid > 15) {
 		return null;
 	}
 
-	return `${match[1]}-${ssid}`;
+	return `${callsign}-${ssid}`;
 }
 
 function parseStationId(stationId: string): StationId | null {
@@ -50,9 +58,15 @@ function parseStationId(stationId: string): StationId | null {
 		return null;
 	}
 
+	const callsign = match[1];
+	const ssidText = match[2];
+	if (callsign === undefined || ssidText === undefined) {
+		return null;
+	}
+
 	return {
-		callsign: match[1],
-		ssid: Number.parseInt(match[2], 10),
+		callsign,
+		ssid: Number.parseInt(ssidText, 10),
 	};
 }
 
@@ -138,16 +152,7 @@ function formatPacketLog(direction: PacketDirection, packetText: string): string
 		return `${time} ${direction} ${type} ${source} -> ${destination} ack=${ackRequired} ${payloadSummary}`;
 	} catch {
 		return `${new Date().toISOString()} ${direction} RAW ${packetText}`;
-	}
 }
-
-function appendLine(current: string, line: string): string {
-	const updated = current === "" ? line : `${current}\n${line}`;
-	const lines = updated.split("\n");
-	if (lines.length <= MAX_LOG_LINES) {
-		return updated;
-	}
-	return lines.slice(lines.length - MAX_LOG_LINES).join("\n");
 }
 
 function toBindFrame(sourceCallsign: string): string | null {
@@ -186,7 +191,7 @@ function toMessageFrame(text: string, sourceCallsign: string, destinationCallsig
 		type: "message",
 		client_msg_id: clientMsgId,
 		source,
-		destination: destination,
+		destination,
 		ack_required: 0,
 		payload: payloadHex,
 	});
@@ -239,83 +244,150 @@ function toAckFrame(incomingPacket: string, localSourceCallsign: string, clientM
 	});
 }
 
-export function usePlainSocket(url: string, sourceCallsign: string, destinationCallsign: string): PlainSocketState {
-	const websocketRef = useRef<WebSocket | null>(null);
-	const clientCounterRef = useRef(0);
-	const [inboundText, setInboundText] = useState("");
+export function createSocketClient(url: string, sourceCallsign: string, destinationCallsign: string, callbacks: SocketCallbacks): SocketClient {
+	let assignedSource = normalizeStationId(sourceCallsign) ?? sourceCallsign;
+	let assignedDestination = normalizeStationId(destinationCallsign) ?? destinationCallsign;
+	let socketGeneration = 0;
+	let socket: WebSocket | null = null;
+	let clientCounter = 0;
 
-	const pushLog = useCallback((line: string): void => {
-		setInboundText((current) => appendLine(current, line));
-	}, []);
+	const nextClientMsgId = (): string => {
+		clientCounter += 1;
+		return `web-${Date.now()}-${clientCounter}`;
+	};
 
-	const nextClientMsgId = useCallback((): string => {
-		clientCounterRef.current += 1;
-		return `web-${Date.now()}-${clientCounterRef.current}`;
-	}, []);
+	const pushLog = (line: string): void => {
+		callbacks.onLogLine(line);
+	};
 
-	const sendText = useCallback((text: string): void => {
-		const websocket = websocketRef.current;
-		if (websocket === null || websocket.readyState !== WebSocket.OPEN) {
-			pushLog(`${new Date().toISOString()} OUT DROP socket-not-open`);
+	const closeSocket = (): void => {
+		const currentSocket = socket;
+		socket = null;
+		if (currentSocket === null) {
 			return;
 		}
 
-		const packet = toMessageFrame(text, sourceCallsign, destinationCallsign, nextClientMsgId());
-		if (packet === null) {
-			pushLog(`${new Date().toISOString()} OUT DROP invalid-callsign`);
+		try {
+			currentSocket.close();
+		} catch {
+			// Ignore shutdown errors.
+		}
+	};
+
+	const openSocket = (): void => {
+		socketGeneration += 1;
+		const generation = socketGeneration;
+		closeSocket();
+		callbacks.onStatus(`Opening websocket at ${url}.`);
+
+		let nextSocket: WebSocket;
+		try {
+			nextSocket = new WebSocket(url);
+		} catch (error) {
+			callbacks.onStatus(`Unable to open websocket: ${String(error)}`);
+			pushLog(`${new Date().toISOString()} OUT DROP websocket-open-failed`);
 			return;
 		}
-		websocket.send(packet);
-		pushLog(formatPacketLog("OUT", packet));
-	}, [destinationCallsign, nextClientMsgId, pushLog, sourceCallsign]);
 
-	useEffect(() => {
-		const websocket = new WebSocket(url);
-		websocketRef.current = websocket;
+		socket = nextSocket;
 
-		websocket.onopen = () => {
-			const bindPacket = toBindFrame(sourceCallsign);
-			if (bindPacket === null) {
+		nextSocket.onopen = () => {
+			if (generation !== socketGeneration || socket !== nextSocket) {
+				return;
+			}
+
+			const bindFrame = toBindFrame(assignedSource);
+			if (bindFrame === null) {
 				pushLog(`${new Date().toISOString()} OUT DROP invalid-callsign`);
 				return;
 			}
-			websocket.send(bindPacket);
-			pushLog(formatPacketLog("OUT", bindPacket));
+
+			nextSocket.send(bindFrame);
+			pushLog(formatPacketLog("OUT", bindFrame));
+			callbacks.onStatus(`Bound as ${assignedSource} and ready to relay messages.`);
 		};
 
-		websocket.onmessage = (event) => {
+		nextSocket.onmessage = (event) => {
+			if (generation !== socketGeneration || socket !== nextSocket) {
+				return;
+			}
+
 			if (typeof event.data !== "string") {
 				return;
 			}
 
 			pushLog(formatPacketLog("IN", event.data));
 
-			const ackPacket = toAckFrame(event.data, sourceCallsign, nextClientMsgId());
-			if (ackPacket === null) {
+			const ackFrame = toAckFrame(event.data, assignedSource, nextClientMsgId());
+			if (ackFrame === null) {
 				return;
 			}
-			websocket.send(ackPacket);
-			pushLog(formatPacketLog("OUT", ackPacket));
+
+			nextSocket.send(ackFrame);
+			pushLog(formatPacketLog("OUT", ackFrame));
 		};
 
-		return () => {
-			try {
-				if (websocket.readyState !== WebSocket.CLOSED) {
-					websocket.close();
-				}
-			} catch {
-				// ignore
+		nextSocket.onclose = () => {
+			if (generation !== socketGeneration || socket !== nextSocket) {
+				return;
 			}
 
-			if (websocketRef.current === websocket) {
-				websocketRef.current = null;
-			}
+			socket = null;
+			callbacks.onStatus("Socket closed. Verify the callsign fields to reconnect.");
 		};
-	}, [nextClientMsgId, pushLog, sourceCallsign, url]);
+
+		nextSocket.onerror = () => {
+			if (generation !== socketGeneration || socket !== nextSocket) {
+				return;
+			}
+
+			callbacks.onStatus(`Websocket error at ${url}.`);
+		};
+	};
+
+	const setRoute = (nextSourceCallsign: string, nextDestinationCallsign: string): void => {
+		const normalizedSource = normalizeStationId(nextSourceCallsign);
+		const normalizedDestination = normalizeStationId(nextDestinationCallsign);
+		if (normalizedSource === null || normalizedDestination === null) {
+			pushLog(`${new Date().toISOString()} OUT DROP invalid-callsign`);
+			return;
+		}
+
+		const currentSocket = socket;
+		const sourceChanged = normalizedSource !== assignedSource;
+		assignedSource = normalizedSource;
+		assignedDestination = normalizedDestination;
+
+		if (currentSocket === null || currentSocket.readyState !== WebSocket.OPEN || sourceChanged) {
+			openSocket();
+		}
+	};
+
+	const sendText = (text: string): void => {
+		const currentSocket = socket;
+		if (currentSocket === null || currentSocket.readyState !== WebSocket.OPEN) {
+			pushLog(`${new Date().toISOString()} OUT DROP socket-not-open`);
+			return;
+		}
+
+		const packet = toMessageFrame(text, assignedSource, assignedDestination, nextClientMsgId());
+		if (packet === null) {
+			pushLog(`${new Date().toISOString()} OUT DROP invalid-callsign`);
+			return;
+		}
+
+		currentSocket.send(packet);
+		pushLog(formatPacketLog("OUT", packet));
+	};
+
+	const dispose = (): void => {
+		socketGeneration += 1;
+		closeSocket();
+	};
 
 	return {
-		inboundText,
+		setRoute,
 		sendText,
+		dispose,
 	};
 }
-

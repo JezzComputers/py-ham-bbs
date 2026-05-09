@@ -1,0 +1,113 @@
+:root {
+	--bg: #e6e6e6;
+	--panel: #ffffff;
+	--text: #000;
+	--border: #aaa;
+	--space: 1rem;
+	--field-space: 0.35rem;
+	--radius: 4px;
+	--success: #1f7a3d;
+	--danger: #b42318;
+	--neutral: #666;
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--bg: #1e1e1e;
+		--panel: #2a2a2a;
+		--text: #f0f0f0;
+		--border: #555;
+		--neutral: #aaa;
+	}
+}
+
+body {
+	margin: 0;
+	padding: var(--space);
+	min-height: 100%;
+	font: 16px/1.4 sans-serif;
+	background: var(--bg);
+	color: var(--text);
+}
+
+.app {
+	max-width: 95%;
+	margin: 0 auto;
+	display: grid;
+	gap: var(--space);
+}
+
+label {
+	display: grid;
+	gap: var(--field-space);
+	min-width: 0;
+}
+
+.row {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) max-content;
+	gap: var(--space);
+	align-items: end;
+}
+
+.verify-group {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+	justify-self: end;
+	white-space: nowrap;
+	min-width: 0;
+}
+
+input,
+textarea,
+button {
+	width: 100%;
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	background: var(--panel);
+	color: var(--text);
+	padding: 6px;
+	font: inherit;
+}
+
+.verify-group button {
+	width: auto;
+	flex: 0 0 auto;
+	cursor: pointer;
+}
+
+.verify-status {
+	display: inline-block;
+	width: 1em;
+	height: 1em;
+	line-height: 1;
+	font-size: 1em;
+	text-align: center;
+	user-select: none;
+	flex: 0 0 auto;
+	color: var(--neutral);
+}
+
+.verify-status[data-state="verified"] {
+	color: var(--success);
+}
+
+.verify-status[data-state="invalid"] {
+	color: var(--danger);
+}
+
+textarea {
+	height: 70vh;
+	resize: vertical;
+}
+
+button {
+	cursor: pointer;
+}

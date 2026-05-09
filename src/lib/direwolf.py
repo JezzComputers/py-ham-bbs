@@ -3,7 +3,7 @@
 import socket
 from typing import Final
 
-from .ax25 import AX25FrameBuilder, AX25FrameConfig, InvalidAX25Error
+from .ax25 import AX25FrameBuilder, InvalidAX25Error
 from .kiss import FEND, InvalidKISSError, KISSFrameBuilder, KISSFrameConfig
 from .terminal import BLUE, CYAN, GREEN, MAGENTA, RESET
 
@@ -100,11 +100,12 @@ def validate_kiss_payload(payload: bytes) -> bytes:
 	if payload == b"":
 		raise ValueError("payload cannot be empty")
 	if len(payload) < MIN_KISS_AX25_LEN:
-		raise ValueError("payload length must be greater than 19 bytes (to accommodate minimal KISS/AX.25 frame)")
+		raise ValueError("payload length must be at least 19 bytes (to accommodate minimal KISS/AX.25 frame)")
 	if payload[0] != FEND or payload[-1] != FEND:
 		raise ValueError("payload must include leading and trailing C0 (FEND) bytes")
 
-	AX25FrameBuilder(AX25FrameConfig()).decode_ax25_frame(KISSFrameBuilder(KISSFrameConfig()).decode_kiss_frame(payload))
+	ax25_frame = KISSFrameBuilder(KISSFrameConfig()).decode_kiss_frame(payload)
+	AX25FrameBuilder.decode_ax25_frame(ax25_frame)
 	return payload
 
 

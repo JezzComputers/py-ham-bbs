@@ -1,14 +1,47 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Web client UI for py-ham-bbs — lightweight websocket demo and UI components." />
-    <title>web-client</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+
+<head>
+	<meta charset="UTF-8">
+	<meta name="description" content="Simple web client for packet radio">
+	<meta name="author" content="Jeremy & Luke">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>simple-web-client</title>
+	<link rel="icon" type="image/x-icon" href="images/favicon.svg">
+	<link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+	<main class="app">
+		<div class="row">
+			<label>
+				Source Callsign
+				<input id="source-callsign" type="text" value="VK3ABC-0" autocomplete="off">
+			</label>
+
+			<label>
+				Destination Callsign
+				<input id="destination-callsign" type="text" value="VK3XYZ-0" autocomplete="off">
+			</label>
+
+			<div class="verify-group">
+				<button id="verify-button" type="button">Verify</button>
+				<span id="verify-status" class="verify-status" role="img" aria-live="polite" aria-label="Route not verified." data-state="idle">—</span>
+			</div>
+		</div>
+
+		<label>
+			Outbound message
+			<input id="outbound-message" type="text" placeholder="Type message to transmit" autocomplete="off">
+		</label>
+
+		<label>
+			Packet log
+			<textarea id="packet-log" readonly></textarea>
+		</label>
+	</main>
+
+	<script type="module" src="dist/main.js"></script>
+</body>
+
 </html>

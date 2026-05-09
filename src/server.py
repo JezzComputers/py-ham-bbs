@@ -148,8 +148,12 @@ class MessageRepository:
 		ack_required: AckReqValues,
 		payload: str,
 		client_msg_id: str | None,
-	) -> None:
-		"""Save a message frame to the database. Uses INSERT OR IGNORE to prevent duplicate entries for the same source/client_msg_id."""
+	) -> str:
+		"""Save a message frame to the database and return the persisted server_id.
+
+		Uses INSERT OR IGNORE to prevent duplicate entries for the same source/client_msg_id.
+		If the insert is ignored, returns the existing server_id already stored for that key.
+		"""
 
 		with self._connection:
 			self._connection.execute(
@@ -160,6 +164,14 @@ class MessageRepository:
 				""",
 				(server_id, timestamp, frame_type, source, destination, ack_required, payload, client_msg_id),
 			)
+
+		if client_msg_id is None:
+			return str(server_id)
+
+		stored_server_id = self.get_server_id(source, client_msg_id)
+		if stored_server_id is not None:
+			return stored_server_id
+		return str(server_id)
 
 
 def now_iso() -> str:
@@ -349,7 +361,7 @@ class MessageBrokerServer:
 			frame["payload"] = bytes(frame["payload"]).hex()
 		return frame
 
-	def _save_frame(self, frame: dict[str, Any]) -> None:
+	def _save_frame(self, frame: dict[str, Any]) -> str:
 		payload = frame["payload"]
 		if isinstance(payload, str):
 			payload_text = payload_to_store_text(bytes.fromhex(payload))
@@ -359,7 +371,7 @@ class MessageBrokerServer:
 			raise InvalidPayloadError("payload must be a hex string or JSON object for storage")
 		client_msg_id_value = frame.get("client_msg_id")
 		client_msg_id = client_msg_id_value if isinstance(client_msg_id_value, str) else None
-		self._store.save_frame(
+		return self._store.save_frame(
 			server_id=str(frame["id"]),
 			timestamp=str(frame["timestamp"]),
 			frame_type=frame["type"],
@@ -448,7 +460,7 @@ class MessageBrokerServer:
 			frame_id=frame_id,
 			timestamp=timestamp,
 		)
-		self._save_frame(canonical)
+		canonical["id"] = self._save_frame(canonical)
 		return canonical
 
 	async def _deliver_and_setup_pending(self, origin_ws: ServerConnection, origin_source: str, parsed: ValidatedInboundFrame, canonical: dict[str, Any]) -> set[str]:
@@ -618,7 +630,7 @@ class MessageBrokerServer:
 			payload=ack_payload,
 			client_msg_id=frame.client_msg_id,
 		)
-		self._save_frame(canonical_ack)
+		canonical_ack["id"] = self._save_frame(canonical_ack)
 		await self._fanout(self._resolve_recipients(frame.destination), canonical_ack)
 
 		pending_state = self._pending_acks.get(ack_for_value)

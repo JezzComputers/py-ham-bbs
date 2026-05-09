@@ -64,7 +64,7 @@ class KISSFrameBuilder:
 
 		Raises:
 			InvalidKISSError: when the KISS frame is malformed, too short,
-				uses a non-zero command, or contains unsupported command bytes.
+			uses a non-zero command, or contains unsupported command bytes.
 		"""
 
 		if len(kiss_frame) < 3 or kiss_frame[0] != FEND or kiss_frame[-1] != FEND:

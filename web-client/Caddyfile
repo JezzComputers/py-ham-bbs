@@ -1,0 +1,7 @@
+:8080 {
+	root * .
+	encode zstd gzip
+	file_server
+
+	reverse_proxy /ws localhost:8765
+}

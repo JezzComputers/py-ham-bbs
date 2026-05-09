@@ -68,3 +68,15 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# dependencies
+web-client/node_modules/
+
+# build output
+web-client-dist/
+
+# generated reports
+lighthouse-*.html
+
+# database files
+*.db
