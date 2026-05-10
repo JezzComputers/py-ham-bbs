@@ -8,6 +8,8 @@ Tools and configuration files for building a lightweight ham radio packet BBS ma
 
 WebSocket Message Protocol can be found at the [WebSocket-Message-Protocol wiki](https://github.com/jezza5400-org/py-ham-bbs/wiki/08%E2%80%90WebSocket-Message-Protocol) page.
 
+If possible the radio should be in FM-D (FM Data) mode as audio goes through the DATA path (USB soundcard or ACC connector) which is flat, wide, and unprocessed (what AX.25 wants)
+
 ## Implemented Protocol Subset
 
 The current server implementation in `src/server.py` supports a practical subset of the protocol for bidirectional exchange:
@@ -30,11 +32,7 @@ The current server implementation in `src/server.py` supports a practical subset
 
 ### Server binding and public reachability
 
-- Default binding: `0.0.0.0:8765` — the protocol server listens on all network interfaces and is intended to be publicly reachable from the host's network addresses.
-
-This design makes the server accessible to remote clients (LAN or internet). When deploying on an untrusted network, place the server behind appropriate protections (firewalls, reverse proxies, TLS termination, authentication) and ensure you understand the security implications of exposing the service.
-
-If possible the radio should be in FM-D (FM Data) mode as audio goes through the DATA path (USB soundcard or ACC connector) which is flat, wide, and unprocessed (what AX.25 wants)
+Default binding: `0.0.0.0:8765` — the protocol server listens on all network interfaces and is intended to be publicly reachable from the host's network addresses. This design makes the server accessible to remote clients (LAN or internet).
 
 ## GitHub Actions
 
