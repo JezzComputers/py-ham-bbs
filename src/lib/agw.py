@@ -48,10 +48,14 @@ class AGWClient:
 	@classmethod
 	def connect(cls, host: str = DEFAULT_AGW_HOST, port: int = DEFAULT_AGW_PORT, timeout: float = 10.0) -> AGWClient:
 		sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		sock.settimeout(timeout)
-		sock.connect((host, port))
-		sock.settimeout(None)
-		return cls(sock)
+		try:
+			sock.settimeout(timeout)
+			sock.connect((host, port))
+			sock.settimeout(None)
+			return cls(sock)
+		except Exception:
+			sock.close()
+			raise
 
 	def close(self) -> None:
 		self._sock.close()
@@ -60,6 +64,14 @@ class AGWClient:
 		header = frame.header
 		if len(frame.data) != header.data_len:
 			raise InvalidAGWError("frame data length does not match AGW header length")
+
+		# Validate header fields before struct.pack() to ensure consistent errors
+		if not (0 <= header.port <= 0xFF):
+			raise InvalidAGWError("port must be in range 0..255")
+		if not (0 <= header.pid <= 0xFF):
+			raise InvalidAGWError("pid must be in range 0..255")
+		if len(header.datakind) != 1 or ord(header.datakind) > 0x7F:
+			raise InvalidAGWError("datakind must be a single ASCII character")
 
 		raw_header = _HEADER_STRUCT.pack(
 			header.port,
@@ -125,8 +137,11 @@ class AGWClient:
 			user_reserved,
 		) = _HEADER_STRUCT.unpack(raw_header)
 
-		if data_len < 0:
-			raise InvalidAGWError("negative AGW data length")
+		# Sanity check on payload size to avoid attempting to read/allocate
+		# extremely large payloads from a malicious or buggy peer.
+		max_payload_size = 0x7FFFFFFF  # 2GB (practical upper bound)
+		if data_len > max_payload_size:
+			raise InvalidAGWError(f"AGW data length {data_len} exceeds maximum {max_payload_size}")
 
 		data = self._recv_exact(data_len)
 		header = AGWHeader(
@@ -176,7 +191,6 @@ class AGWClient:
 		return bytes(data)
 
 
-
 def normalize_call(raw: str) -> str:
 	"""Normalize CALL or CALL-SSID to upper case and validate."""
 
@@ -200,7 +214,6 @@ def normalize_call(raw: str) -> str:
 	return f"{call}-{ssid}"
 
 
-
 def parse_port_info(data: bytes) -> list[str]:
 	"""Parse AGW 'G' response text into a list of channel descriptions."""
 
@@ -209,7 +222,6 @@ def parse_port_info(data: bytes) -> list[str]:
 	if len(parts) <= 1:
 		return []
 	return parts[1:]
-
 
 
 def _encode_call(value: str) -> bytes:
@@ -223,10 +235,8 @@ def _encode_call(value: str) -> bytes:
 	return raw.ljust(10, b"\x00")
 
 
-
 def _decode_call(raw: bytes) -> str:
 	return raw.split(b"\x00", 1)[0].decode("ascii", errors="replace").strip()
-
 
 
 def _normalize_datakind(datakind: str) -> str:

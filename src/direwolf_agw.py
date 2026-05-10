@@ -24,7 +24,6 @@ from lib.terminal import (
 
 DEFAULT_AGW_HOST = "127.0.0.1"
 DEFAULT_AGW_PORT = 8000
-DEFAULT_AUTO_CONNECT = False
 
 
 @dataclass(slots=True)
@@ -133,7 +132,12 @@ def listener(client: AGWClient, state: SessionState, state_lock: threading.Lock)
 def main() -> None:
 	use_color()
 	agw_host = os.getenv("DW_AGW_HOST", DEFAULT_AGW_HOST)
-	agw_port = int(os.getenv("DW_AGW_PORT", str(DEFAULT_AGW_PORT)))
+	agw_port_raw = os.getenv("DW_AGW_PORT", str(DEFAULT_AGW_PORT))
+	try:
+		agw_port = int(agw_port_raw)
+	except ValueError:
+		print(f"{BRIGHT_RED}Invalid DW_AGW_PORT value:{RESET} {agw_port_raw!r}")
+		sys.exit(1)
 	auto_connect = os.getenv("DW_AUTO_CONNECT", "0").strip().lower() in {"1", "true", "yes", "on"}
 
 	try:
@@ -181,12 +185,7 @@ def main() -> None:
 
 	threading.Thread(target=listener, args=(client, state, state_lock), daemon=True).start()
 
-	print(
-		f"{GREEN}AGW connected-mode console ready.{RESET}\n"
-		f"{BRIGHT_BLACK}AGW endpoint:{RESET} {agw_host}:{agw_port}\n"
-		f"{BRIGHT_BLACK}Auto-connect:{RESET} {auto_connect and bool(remote_call)}\n"
-		f"{BRIGHT_BLACK}Commands:{RESET} /SHOW /CONNECT [CALL] /SETREMOTE CALL /DISCONNECT /QUIT"
-	)
+	print(f"{GREEN}AGW connected-mode console ready.{RESET}\n{BRIGHT_BLACK}AGW endpoint:{RESET} {agw_host}:{agw_port}\n{BRIGHT_BLACK}Auto-connect:{RESET} {auto_connect and bool(remote_call)}\n{BRIGHT_BLACK}Commands:{RESET} /SHOW /CONNECT [CALL] /SETREMOTE CALL /DISCONNECT /QUIT")
 
 	while True:
 		try:
@@ -207,12 +206,7 @@ def main() -> None:
 					status = _status_text(state)
 					remote_now = state.remote_call
 					connected_now = state.connected
-				print(
-					f"{BRIGHT_YELLOW}MY={RESET}{my_call} "
-					f"{BRIGHT_YELLOW}REMOTE={RESET}{remote_now or '(unset)'} "
-					f"{BRIGHT_YELLOW}CONNECTED={RESET}{connected_now} "
-					f"{BRIGHT_YELLOW}STATE={RESET}{status}"
-				)
+				print(f"{BRIGHT_YELLOW}MY={RESET}{my_call} {BRIGHT_YELLOW}REMOTE={RESET}{remote_now or '(unset)'} {BRIGHT_YELLOW}CONNECTED={RESET}{connected_now} {BRIGHT_YELLOW}STATE={RESET}{status}")
 
 			elif upper.startswith("/SETREMOTE"):
 				parts = clean.split()
