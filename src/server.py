@@ -411,7 +411,7 @@ class MessageBrokerServer:
 		try:
 			await asyncio.to_thread(self._direwolf_client.send_kiss_frame, payload)
 		except OSError as exc:
-			logger.warning("Direwolf send failed for %s -> %s: %s", source, destination, exc)
+			logger.warning("Direwolf send failed for %s → %s: %s", source, destination, exc)
 
 	async def _send_error(
 		self,

@@ -170,7 +170,7 @@ function formatPacketLog(direction: PacketDirection, packetText: string): string
 		const destination = typeof parsed.destination === "string" ? parsed.destination : "?";
 		const ackRequired = typeof parsed.ack_required === "number" ? String(parsed.ack_required) : "?";
 		const payloadSummary = summarizePayload(parsed.payload);
-		return `${time} ${direction} ${type} ${source} -> ${destination} ack=${ackRequired} ${payloadSummary}`;
+		return `${time} ${direction} ${type} ${source} → ${destination} ack=${ackRequired} ${payloadSummary}`;
 	} catch {
 		return `${formatNowISO8601()} ${direction} RAW ${packetText}`;
 	}
