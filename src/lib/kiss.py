@@ -14,6 +14,10 @@ _ESC_TFESC: bytes = bytes([FESC, TFESC])
 
 
 class KISSFrameConfig:
+	"""Configuration for KISS frame building and decoding, including the KISS command byte."""
+
+	__slots__ = ("_kiss_command",)
+
 	def __init__(self, kiss_command: int = 0x00) -> None:
 		"""Create a KISS frame configuration.
 
@@ -43,6 +47,10 @@ class KISSFrameConfig:
 
 
 class KISSFrameBuilder:
+	"""Builder and decoder for KISS frames, using a specified KISSFrameConfig for command byte and framing rules."""
+
+	__slots__ = ("_config",)
+
 	def __init__(self, config: KISSFrameConfig) -> None:
 		self._config: KISSFrameConfig = config
 

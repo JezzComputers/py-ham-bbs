@@ -326,6 +326,10 @@ def resolve_direwolf_client() -> DirewolfKISSClient | None:
 
 
 class MessageBrokerServer:
+	"""Core server class that manages client connections, message routing, and interactions with the message repository and Direwolf client."""
+
+	__slots__ = ("_store", "_server_source", "_direwolf_client", "_bound_sources", "_routes", "_pending_acks")
+
 	def __init__(self, store: MessageRepository, server_source: str, direwolf_client: DirewolfKISSClient | None = None) -> None:
 		self._store = store
 		self._server_source = server_source

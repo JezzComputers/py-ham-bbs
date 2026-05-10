@@ -16,6 +16,8 @@ MIN_KISS_AX25_LEN: Final[int] = 19
 class KISSStreamDecoder:
 	"""Incrementally splits a KISS byte stream into complete frames."""
 
+	__slots__ = ("_buffer",)
+
 	def __init__(self) -> None:
 		self._buffer = bytearray()
 
@@ -35,7 +37,7 @@ class KISSStreamDecoder:
 				del self._buffer[:start]
 
 			try:
-				end = self._buffer.index(FEND, 1)
+				end: int = self._buffer.index(FEND, 1)
 			except ValueError:
 				break
 
@@ -49,10 +51,14 @@ class KISSStreamDecoder:
 
 
 class DirewolfKISSClient:
+	"""A simple client for sending KISS frames to a Direwolf instance over TCP."""
+
+	__slots__ = ("_host", "_port", "_socket")
+
 	def __init__(self, host: str = DEFAULT_KISS_HOST, port: int = DEFAULT_KISS_PORT) -> None:
-		self._host = host
-		self._port = port
-		self._socket: socket.socket | None = None
+		self._host: str = host
+		self._port: int = port
+		self._socket = None
 
 	@property
 	def host(self) -> str:

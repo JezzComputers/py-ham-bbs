@@ -70,9 +70,10 @@ ignore = [
 	"ERA",    # allow commented-out code
 	"E501",   # allow long lines
 	"COM812", # avoid formatter conflict warnings
-	"TC006",  # ignore unquoted type expressions in typing.cast() calls.
+	"TC006",  # ignore unquoted type expressions in typing.cast() calls
 	"TD002",  # author in TODO
-	"TD003",  # Issue link in TODO
+	"TD003",  # issue link in TODO
+	"RUF023", # allow unsorted dunder methods 
 ]
 
 [tool.ruff.format]

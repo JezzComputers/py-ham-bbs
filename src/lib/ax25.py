@@ -62,6 +62,8 @@ class AX25FrameConfig:
 	representations as bytes.
 	"""
 
+	__slots__ = ("_dest_call", "_dest_ssid", "_src_call", "_src_ssid", "_dest_frame", "_src_frame")
+
 	def __init__(self, dest_call: str, dest_ssid: int, src_call: str, src_ssid: int) -> None:
 		self._dest_call: str = dest_call.upper()
 		self._dest_ssid: int = dest_ssid
@@ -124,6 +126,8 @@ class AX25FrameBuilder:
 	compression and extraction of source, destination, and message text from
 	frames.
 	"""
+
+	__slots__ = ("config", "control", "pid")
 
 	def __init__(self, config: AX25FrameConfig, ax25_control: int = 0x03, ax25_pid: int = 0x01) -> None:
 		self.config: AX25FrameConfig = config
