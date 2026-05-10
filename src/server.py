@@ -92,6 +92,7 @@ class MessageRepository:
 
 	def _create_schema(self) -> None:
 		with self._connection:
+			self._connection.execute("DROP INDEX IF EXISTS idx_source_client_msg")
 			self._connection.execute(
 				"""
 				CREATE TABLE IF NOT EXISTS messages (
@@ -110,7 +111,7 @@ class MessageRepository:
 				"""
 				CREATE UNIQUE INDEX IF NOT EXISTS idx_source_client_msg
 				ON messages(source, client_msg_id)
-				WHERE client_msg_id IS NOT NULL
+				WHERE client_msg_id IS NOT NULL AND type = 'message'
 				""",
 			)
 
@@ -120,13 +121,13 @@ class MessageRepository:
 		self._connection.close()
 
 	def get_server_id(self, source: str, client_msg_id: str) -> str | None:
-		"""Retrieve the server_id for a given source and client_msg_id, or None if not found."""
+		"""Retrieve the server_id for a message frame with a given source and client_msg_id, or None if not found."""
 
 		row = self._connection.execute(
 			"""
 			SELECT server_id
 			FROM messages
-			WHERE source = ? AND client_msg_id = ?
+			WHERE source = ? AND client_msg_id = ? AND type = 'message'
 			LIMIT 1
 			""",
 			(source, client_msg_id),
@@ -151,7 +152,7 @@ class MessageRepository:
 	) -> str:
 		"""Save a message frame to the database and return the persisted server_id.
 
-		Uses INSERT OR IGNORE to prevent duplicate entries for the same source/client_msg_id.
+		Uses INSERT OR IGNORE to prevent duplicate entries for the same source/client_msg_id among message frames.
 		If the insert is ignored, returns the existing server_id already stored for that key.
 		"""
 

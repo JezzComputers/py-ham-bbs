@@ -1,6 +1,6 @@
 # test_site
 
-Static site served by Caddy from the project root.
+Static site served localy by Caddy.
 
 The frontend now uses a small websocket client in [src/websocketClient.ts](src/websocketClient.ts) so the page can bind the callsign pair, send outbound text, and log inbound frames in one place.
 

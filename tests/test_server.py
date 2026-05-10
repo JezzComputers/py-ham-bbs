@@ -100,6 +100,35 @@ def test_store_keeps_first_mapping_for_source_and_client_msg_id(tmp_path: Path) 
 	store.close()
 
 
+def test_store_ignores_non_message_frames_for_client_msg_id_dedup(tmp_path: Path) -> None:
+	store = MessageRepository(tmp_path / "protocol-non-message.db")
+	control_id = store.save_frame(
+		server_id="019d5332-1b4c-743c-9821-25ca99a09f0c",
+		timestamp="2026-04-03T23:32:13.123456+11:00",
+		frame_type="control",
+		source="VK3XYZ-0",
+		destination="VK3ABC-0",
+		ack_required=0,
+		payload=json.dumps({"subtype": "bind", "content": {"ready": True}}),
+		client_msg_id="c1-0002",
+	)
+	message_id = store.save_frame(
+		server_id="019d5332-1b4c-743c-9821-25ca99a09f0d",
+		timestamp="2026-04-03T23:32:14.123456+11:00",
+		frame_type="message",
+		source="VK3XYZ-0",
+		destination="VK3ABC-0",
+		ack_required=1,
+		payload=build_valid_kiss_payload_hex(),
+		client_msg_id="c1-0002",
+	)
+
+	assert control_id == "019d5332-1b4c-743c-9821-25ca99a09f0c"
+	assert message_id == "019d5332-1b4c-743c-9821-25ca99a09f0d"
+	assert store.get_server_id("VK3XYZ-0", "c1-0002") == message_id
+	store.close()
+
+
 def test_protocol_server_routes_message_and_deduplicates_client_msg_id(tmp_path: Path) -> None:
 	async def run_test() -> None:
 		store = MessageRepository(tmp_path / "protocol-flow.db")

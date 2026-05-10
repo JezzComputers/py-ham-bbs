@@ -12,7 +12,8 @@ if (!srcInput || !destInput || !outboundInput || !verifyBtn || !verifyStatus || 
 	throw new Error("App controls were not found in the page markup.");
 }
 
-const socketUrl = `ws://${location.host}/ws`;
+const socketProtocol = location.protocol === "https:" ? "wss" : "ws";
+const socketUrl = `${socketProtocol}://${location.host}/ws`;
 let logBuffer = "";
 let verifiedSource: string | null = null;
 let verifiedDestination: string | null = null;
