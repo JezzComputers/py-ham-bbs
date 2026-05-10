@@ -1,4 +1,4 @@
-import { createSocketClient, normalizeStationId } from "./websocketClient";
+import { createSocketClient, normalizeStationId, formatNowISO8601 } from "./websocketClient";
 
 const srcInput = document.getElementById("source-callsign") as HTMLInputElement | null;
 const destInput = document.getElementById("destination-callsign") as HTMLInputElement | null;
@@ -76,18 +76,18 @@ const currentRouteIsVerified = (): boolean => {
 };
 
 const socketClient = createSocketClient(socketUrl, srcInput.value, destInput.value, {
-	onLogLine: (line) => {
+	onLogLine: (line: string) => {
 		appendLogLine(line);
 	},
-	onStatus: (line) => {
-		const message = `${new Date().toISOString()} STATUS ${line}`;
+	onStatus: (line: string) => {
+		const message = `${formatNowISO8601()} STATUS ${line}`;
 		console.log(message);
 		appendLogLine(message);
 	},
 });
 
 const appendStatus = (line: string): void => {
-	const message = `${new Date().toISOString()} INFO ${line}`;
+	const message = `${formatNowISO8601()} INFO ${line}`;
 	console.log(message);
 	appendLogLine(message);
 };

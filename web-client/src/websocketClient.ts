@@ -27,6 +27,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
 }
 
+export function formatNowISO8601(): string {
+	const now = new Date();
+	
+	// Get local time components
+	const year = now.getFullYear();
+	const month = String(now.getMonth() + 1).padStart(2, '0');
+	const date = String(now.getDate()).padStart(2, '0');
+	const hours = String(now.getHours()).padStart(2, '0');
+	const minutes = String(now.getMinutes()).padStart(2, '0');
+	const seconds = String(now.getSeconds()).padStart(2, '0');
+	const ms = String(now.getMilliseconds()).padStart(3, '0');
+	
+	// Calculate timezone offset
+	const offset = -now.getTimezoneOffset();
+	const offsetSign = offset >= 0 ? '+' : '-';
+	const offsetHours = String(Math.abs(Math.floor(offset / 60))).padStart(2, '0');
+	const offsetMinutes = String(Math.abs(offset % 60)).padStart(2, '0');
+	
+	return `${year}-${month}-${date}T${hours}:${minutes}:${seconds}.${ms}${offsetSign}${offsetHours}:${offsetMinutes}`;
+}
+
 export function normalizeStationId(value: string): string | null {
 	const normalized = value.trim().toUpperCase();
 	const match = CALLSIGN_WITH_SSID_RE.exec(normalized);
@@ -140,10 +161,10 @@ function formatPacketLog(direction: PacketDirection, packetText: string): string
 	try {
 		const parsed = JSON.parse(packetText) as unknown;
 		if (!isRecord(parsed)) {
-			return `${new Date().toISOString()} ${direction} RAW ${packetText}`;
+			return `${formatNowISO8601()} ${direction} RAW ${packetText}`;
 		}
 
-		const time = typeof parsed.timestamp === "string" ? parsed.timestamp : new Date().toISOString();
+		const time = typeof parsed.timestamp === "string" ? parsed.timestamp : formatNowISO8601();
 		const type = typeof parsed.type === "string" ? parsed.type : "unknown";
 		const source = typeof parsed.source === "string" ? parsed.source : "?";
 		const destination = typeof parsed.destination === "string" ? parsed.destination : "?";
@@ -151,8 +172,8 @@ function formatPacketLog(direction: PacketDirection, packetText: string): string
 		const payloadSummary = summarizePayload(parsed.payload);
 		return `${time} ${direction} ${type} ${source} -> ${destination} ack=${ackRequired} ${payloadSummary}`;
 	} catch {
-		return `${new Date().toISOString()} ${direction} RAW ${packetText}`;
-}
+		return `${formatNowISO8601()} ${direction} RAW ${packetText}`;
+	}
 }
 
 function toBindFrame(sourceCallsign: string): string | null {
@@ -285,7 +306,7 @@ export function createSocketClient(url: string, sourceCallsign: string, destinat
 			nextSocket = new WebSocket(url);
 		} catch (error) {
 			callbacks.onStatus(`Unable to open websocket: ${String(error)}`);
-			pushLog(`${new Date().toISOString()} OUT DROP websocket-open-failed`);
+		pushLog(`${formatNowISO8601()} OUT DROP websocket-open-failed`);
 			return;
 		}
 
@@ -298,7 +319,7 @@ export function createSocketClient(url: string, sourceCallsign: string, destinat
 
 			const bindFrame = toBindFrame(assignedSource);
 			if (bindFrame === null) {
-				pushLog(`${new Date().toISOString()} OUT DROP invalid-callsign`);
+				pushLog(`${formatNowISO8601()} OUT DROP invalid-callsign`);
 				return;
 			}
 
@@ -349,7 +370,7 @@ export function createSocketClient(url: string, sourceCallsign: string, destinat
 		const normalizedSource = normalizeStationId(nextSourceCallsign);
 		const normalizedDestination = normalizeStationId(nextDestinationCallsign);
 		if (normalizedSource === null || normalizedDestination === null) {
-			pushLog(`${new Date().toISOString()} OUT DROP invalid-callsign`);
+			pushLog(`${formatNowISO8601()} OUT DROP invalid-callsign`);
 			return;
 		}
 
@@ -366,13 +387,13 @@ export function createSocketClient(url: string, sourceCallsign: string, destinat
 	const sendText = (text: string): void => {
 		const currentSocket = socket;
 		if (currentSocket === null || currentSocket.readyState !== WebSocket.OPEN) {
-			pushLog(`${new Date().toISOString()} OUT DROP socket-not-open`);
+			pushLog(`${formatNowISO8601()} OUT DROP socket-not-open`);
 			return;
 		}
 
 		const packet = toMessageFrame(text, assignedSource, assignedDestination, nextClientMsgId());
 		if (packet === null) {
-			pushLog(`${new Date().toISOString()} OUT DROP invalid-callsign`);
+			pushLog(`${formatNowISO8601()} OUT DROP invalid-callsign`);
 			return;
 		}
 
