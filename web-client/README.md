@@ -6,7 +6,7 @@ The frontend now uses a small websocket client in [src/websocketClient.ts](src/w
 
 ## Run
 
-The current Caddyfile serves plain HTTP on `http://localhost:8080` and HTTPS on `https://localhost:8443`.
+The current Caddyfile serves plain HTTP on `http://localhost:8080`.
 
 then build the client:
 
@@ -22,28 +22,16 @@ pnpm serve
 
 ## Lighthouse
 
-Build or start the server first, then run these Node-powered Lighthouse commands against the local HTTPS endpoint.
+Build or start the server first, then run these Node-powered Lighthouse commands against the local HTTP endpoint at `http://localhost:8080`.
 
-Desktop, browser prefers dark mode:
+Desktop:
 
 ```bash
-pnpx lighthouse https://localhost:8443 --preset=desktop --chrome-flags="--ignore-certificate-errors --force-dark-mode" --output html --output-path=./lighthouse-desktop-dark.html
+pnpx lighthouse http://localhost:8080 --preset=desktop --output html --output-path=./lighthouse-desktop.html
 ```
 
-Desktop, browser prefers light mode:
+Mobile:
 
 ```bash
-pnpx lighthouse https://localhost:8443 --preset=desktop --chrome-flags="--ignore-certificate-errors --disable-features=WebContentsForceDark" --output html --output-path=./lighthouse-desktop-light.html
-```
-
-Mobile, browser prefers dark mode:
-
-```bash
-pnpx lighthouse https://localhost:8443 --preset=mobile --chrome-flags="--ignore-certificate-errors --force-dark-mode" --output html --output-path=./lighthouse-mobile-dark.html
-```
-
-Mobile, browser prefers light mode:
-
-```bash
-pnpx lighthouse https://localhost:8443 --preset=mobile --chrome-flags="--ignore-certificate-errors --disable-features=WebContentsForceDark" --output html --output-path=./lighthouse-mobile-light.html
+pnpx lighthouse http://localhost:8080 --form-factor=mobile --screenEmulation.mobile --screenEmulation.width=412 --screenEmulation.height=915 --screenEmulation.deviceScaleFactor=2 --output html --output-path=./lighthouse-mobile.html
 ```

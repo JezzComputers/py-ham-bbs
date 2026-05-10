@@ -30,16 +30,20 @@
 body {
 	margin: 0;
 	padding: var(--space);
-	min-height: 100%;
+	height: 100dvh;
+	overflow: hidden;
 	font: 16px/1.4 sans-serif;
 	background: var(--bg);
 	color: var(--text);
 }
 
 .app {
+	height: 100%;
+	min-height: 0;
 	max-width: 95%;
 	margin: 0 auto;
 	display: grid;
+	grid-template-rows: auto auto minmax(0, 1fr);
 	gap: var(--space);
 }
 
@@ -104,8 +108,19 @@ button {
 }
 
 textarea {
-	height: 70vh;
-	resize: vertical;
+	height: 100%;
+	min-height: 0;
+	resize: none;
+}
+
+.app > label:last-of-type {
+	height: 100%;
+	min-height: 0;
+	grid-template-rows: auto minmax(0, 1fr);
+}
+
+.app > label:last-of-type textarea {
+	min-height: 0;
 }
 
 button {
