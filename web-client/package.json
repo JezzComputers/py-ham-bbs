@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "",
   "scripts": {
-    "build": "rm dist/* && tsup src --format esm --minify --out-dir dist",
+    "build": "rm -f dist/* && tsup src --format esm --minify --out-dir dist",
     "serve": "caddy run --config Caddyfile --adapter caddyfile"
   },
   "keywords": [],
