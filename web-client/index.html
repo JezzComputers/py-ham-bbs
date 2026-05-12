@@ -13,26 +13,34 @@
 
 <body>
 	<main class="app">
+		<div class="info-pane">
+			<strong class="info-heading">School destination callsigns</strong>
+			VK3XYZ-0 (Whittlesea Tech School); VK3ABC-0 (School 1); ...
+		</div>
+
 		<div class="row">
 			<label>
-				Source Callsign
-				<input id="source-callsign" type="text" value="VK3ABC-0" autocomplete="off">
+				Student ID / Callsign
+				<input id="student-id" type="text" placeholder="Enter student-id or callsign (SSID optional)"
+					value="VK3XYZ" autocomplete="off">
 			</label>
 
 			<label>
 				Destination Callsign
-				<input id="destination-callsign" type="text" value="VK3XYZ-0" autocomplete="off">
+				<input id="destination-callsign" type="text" placeholder="Enter destination callsign (SSID optional)"
+					value="VK3ABC" autocomplete="off">
 			</label>
 
 			<div class="verify-group">
 				<button id="verify-button" type="button">Verify</button>
-				<span id="verify-status" class="verify-status" role="img" aria-live="polite" aria-label="Route not verified." data-state="idle">—</span>
+				<span id="verify-status" class="verify-status" role="img" aria-live="polite"
+					aria-label="Route not verified." data-state="idle">—</span>
 			</div>
 		</div>
 
 		<label>
 			Outbound message
-			<input id="outbound-message" type="text" placeholder="Type message to transmit" autocomplete="off">
+			<input id="outbound-message" type="text" placeholder="Enter message to transmit" autocomplete="off">
 		</label>
 
 		<label>
@@ -41,7 +49,7 @@
 		</label>
 	</main>
 
-	<script type="module" src="dist/main.js"></script>
+	<script type="module" src="src/main.ts"></script>
 </body>
 
 </html>

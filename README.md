@@ -16,6 +16,7 @@ The current server implementation in `src/server.py` supports a practical subset
 
 - Accepts and validates JSON text frames for `message`, `ack`, `control`, and `error` types.
 - Assigns authoritative server-side `id` (UUIDv7) and `timestamp` (ISO-8601 with timezone) for accepted inbound frames.
+- Verifies each websocket session against the `allowed_students` table in the SQLite database before it accepts routed frames.
 - Validates `source` and `destination` in `CALL-SSID` format and soft-binds `source` to each WebSocket session.
 - Validates `message` payload as KISS hex and verifies it can decode as a KISS-wrapped AX.25 frame.
 - Supports `ack_required` values `0`, `1`, and `2` (unknown numeric values are treated as `0`).
@@ -30,9 +31,15 @@ The current server implementation in `src/server.py` supports a practical subset
 - `PY_HAM_BBS_DIREWOLF_HOST`: Direwolf KISS host (default: `127.0.0.1`).
 - `PY_HAM_BBS_DIREWOLF_PORT`: Direwolf KISS port (default: `8001`).
 
+### Allowed Students
+
+The SQLite protocol database also contains an `allowed_students` table. Each row maps a student ID callsign to a student name. Bare callsigns are accepted and normalized internally to `CALL-0`.
+
+The web client’s Verify button sends the student ID to `src/server.py`; once the server finds a matching row in `allowed_students`, it marks that websocket session verified and uses the normalized student ID as the source callsign for subsequent frames.
+
 ### Server binding and public reachability
 
-Default binding: `0.0.0.0:8765` — the protocol server listens on all network interfaces and is intended to be publicly reachable from the host's network addresses. This design makes the server accessible to remote clients (LAN or internet).
+Default binding: `0.0.0.0:8765` — the protocol server listens on all network interfaces and is intended to be reachable from clients on your local network. The browser app is meant to connect to this websocket wrapper directly; `server.py` is the public-facing interface for the LAN deployment, while Direwolf remains the local backend.
 
 ## GitHub Actions
 

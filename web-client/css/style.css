@@ -37,13 +37,25 @@ body {
 	color: var(--text);
 }
 
+.info-pane {
+	outline: 2px solid #555;
+	border-radius: var(--radius);
+	padding: 6px;
+}
+
+.info-heading {
+	font-weight: bold;
+	display: block;
+	margin-bottom: 0.25rem;
+}
+
 .app {
 	height: 100%;
 	min-height: 0;
 	max-width: 95%;
 	margin: 0 auto;
 	display: grid;
-	grid-template-rows: auto auto minmax(0, 1fr);
+	grid-template-rows: auto auto auto minmax(0, 1fr);
 	gap: var(--space);
 }
 
@@ -84,7 +96,6 @@ button {
 .verify-group button {
 	width: auto;
 	flex: 0 0 auto;
-	cursor: pointer;
 }
 
 .verify-status {
@@ -92,7 +103,6 @@ button {
 	width: 1em;
 	height: 1em;
 	line-height: 1;
-	font-size: 1em;
 	text-align: center;
 	user-select: none;
 	flex: 0 0 auto;
@@ -117,10 +127,6 @@ textarea {
 	height: 100%;
 	min-height: 0;
 	grid-template-rows: auto minmax(0, 1fr);
-}
-
-.app > label:last-of-type textarea {
-	min-height: 0;
 }
 
 button {

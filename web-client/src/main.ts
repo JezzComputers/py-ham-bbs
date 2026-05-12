@@ -1,6 +1,6 @@
 import { createSocketClient, normalizeStationId, formatNowISO8601 } from "./websocketClient";
 
-const srcInput = document.getElementById("source-callsign") as HTMLInputElement | null;
+const studentIdInput = document.getElementById("student-id") as HTMLInputElement | null;
 const destInput = document.getElementById("destination-callsign") as HTMLInputElement | null;
 const outboundInput = document.getElementById("outbound-message") as HTMLInputElement | null;
 const verifyBtn = document.getElementById("verify-button") as HTMLButtonElement | null;
@@ -8,22 +8,23 @@ const verifyStatus = document.getElementById("verify-status") as HTMLSpanElement
 const logArea = document.getElementById("packet-log") as HTMLTextAreaElement | null;
 const MAX_LOG_LINES = 300;
 
-if (!srcInput || !destInput || !outboundInput || !verifyBtn || !verifyStatus || !logArea) {
+if (!studentIdInput || !destInput || !outboundInput || !verifyBtn || !verifyStatus || !logArea) {
 	throw new Error("App controls were not found in the page markup.");
 }
 
 const socketProtocol = location.protocol === "https:" ? "wss" : "ws";
 const socketUrl = `${socketProtocol}://${location.host}/ws`;
 let logBuffer = "";
+let verifiedStudentId: string | null = null;
 let verifiedSource: string | null = null;
 let verifiedDestination: string | null = null;
 
 type VerificationState = "idle" | "verified" | "invalid";
 
 const verificationLabels: Record<VerificationState, string> = {
-	idle: "Route not verified.",
-	verified: "Route verified.",
-	invalid: "Verification failed.",
+	idle: "Student ID not verified.",
+	verified: "Student ID verified.",
+	invalid: "Student ID verification failed.",
 };
 
 const verificationGlyphs: Record<VerificationState, string> = {
@@ -58,11 +59,18 @@ const setVerificationIndicator = (state: VerificationState, label: string = veri
 };
 
 const syncVerificationIndicator = (): void => {
-	const currentSource = normalizeStationId(srcInput.value);
+	const currentStudentId = normalizeStationId(studentIdInput.value);
 	const currentDestination = normalizeStationId(destInput.value);
 
-	if (verifiedSource !== null && verifiedDestination !== null && currentSource === verifiedSource && currentDestination === verifiedDestination) {
-		setVerificationIndicator("verified", `Route verified as ${verifiedSource} to ${verifiedDestination}.`);
+	if (
+		verifiedStudentId !== null
+		&& verifiedSource !== null
+		&& verifiedDestination !== null
+		&& currentStudentId === verifiedStudentId
+		&& currentDestination === verifiedDestination
+	)
+	{
+		setVerificationIndicator("verified", `Student ID ${verifiedStudentId} verified.`);
 		return;
 	}
 
@@ -70,12 +78,12 @@ const syncVerificationIndicator = (): void => {
 };
 
 const currentRouteIsVerified = (): boolean => {
-	const currentSource = normalizeStationId(srcInput.value);
+	const currentStudentId = normalizeStationId(studentIdInput.value);
 	const currentDestination = normalizeStationId(destInput.value);
-	return verifiedSource !== null && verifiedDestination !== null && currentSource === verifiedSource && currentDestination === verifiedDestination;
+	return verifiedStudentId !== null && verifiedSource !== null && verifiedDestination !== null && currentStudentId === verifiedStudentId && currentDestination === verifiedDestination;
 };
 
-const socketClient = createSocketClient(socketUrl, srcInput.value, destInput.value, {
+const socketClient = createSocketClient(socketUrl, {
 	onLogLine: (line: string) => {
 		appendLogLine(line);
 	},
@@ -96,25 +104,37 @@ const markRouteDirty = (): void => {
 	syncVerificationIndicator();
 };
 
-srcInput.addEventListener("input", markRouteDirty);
+studentIdInput.addEventListener("input", markRouteDirty);
 destInput.addEventListener("input", markRouteDirty);
 
 verifyBtn.addEventListener("click", () => {
-	const normalizedSource = normalizeStationId(srcInput.value);
-	const normalizedDestination = normalizeStationId(destInput.value);
-	if (normalizedSource === null || normalizedDestination === null) {
-		setVerificationIndicator("invalid", "Verification failed: source and destination must include a callsign and SSID like VK3ABC-0.");
-		appendStatus("Verification failed: source and destination must include a callsign and SSID like VK3ABC-0.");
-		return;
-	}
+	void (async () => {
+		const studentId = studentIdInput.value.trim();
+		const normalizedStudentId = normalizeStationId(studentId);
+		const normalizedDestination = normalizeStationId(destInput.value);
+		if (normalizedStudentId === null || normalizedDestination === null) {
+			setVerificationIndicator("invalid", "Verification failed: enter a valid student ID/callsign and a destination callsign like VK3ABC or VK3ABC-0.");
+			appendStatus("Verification failed: enter a valid student ID/callsign and a destination callsign like VK3ABC or VK3ABC-0.");
+			return;
+		}
 
-	verifiedSource = normalizedSource;
-	verifiedDestination = normalizedDestination;
-	srcInput.value = normalizedSource;
-	destInput.value = normalizedDestination;
-	socketClient.setRoute(normalizedSource, normalizedDestination);
-	setVerificationIndicator("verified", `Route verified as ${normalizedSource} to ${normalizedDestination}.`);
-	appendStatus(`Verified route: source ${normalizedSource}, destination ${normalizedDestination}.`);
+		try {
+			const verifiedSourceCallsign = await socketClient.verifyStudentId(normalizedStudentId);
+			verifiedStudentId = verifiedSourceCallsign;
+			verifiedSource = verifiedSourceCallsign;
+			verifiedDestination = normalizedDestination;
+			socketClient.setRoute(verifiedSourceCallsign, normalizedDestination);
+			setVerificationIndicator("verified", `Student ID ${verifiedSourceCallsign} verified.`);
+			appendStatus(`Verified student ID ${verifiedSourceCallsign} for destination ${normalizedDestination}.`);
+		} catch (error) {
+			verifiedStudentId = null;
+			verifiedSource = null;
+			verifiedDestination = null;
+			const message = error instanceof Error ? error.message : String(error);
+			setVerificationIndicator("invalid", `Verification failed: ${message}`);
+			appendStatus(`Verification failed: ${message}`);
+		}
+	})();
 });
 
 outboundInput.addEventListener("keydown", (event) => {
@@ -129,7 +149,7 @@ outboundInput.addEventListener("keydown", (event) => {
 	}
 
 	if (!currentRouteIsVerified() || verificationState !== "verified") {
-		appendStatus("Verify the callsigns before sending.");
+		appendStatus("Verify the student ID before sending.");
 		return;
 	}
 

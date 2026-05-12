@@ -12,7 +12,7 @@ from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
 from lib.ax25 import InvalidAX25Error, is_valid_callsign
-from lib.database import MessageRepository, resolve_db_path
+from lib.database import MessageRepository, SaveFrameResult, resolve_db_path
 from lib.direwolf import DEFAULT_KISS_HOST, DEFAULT_KISS_PORT, DirewolfKISSClient, validate_kiss_payload
 from lib.kiss import InvalidKISSError
 
@@ -38,7 +38,7 @@ AckReqValues = Literal[0, 1, 2]
 VALID_ACK_REQUIRED_VALUES: Final[frozenset[AckReqValues]] = frozenset({0, 1, 2})
 AckStatValues = Literal["received", "processed", "failed"]
 VALID_ACK_STATUS_VALUES: Final[frozenset[AckStatValues]] = frozenset({"received", "processed", "failed"})
-CALLSIGN_WITH_SSID_RE: Final[re.Pattern[str]] = re.compile(r"^([A-Z0-9]{1,6})-(\d{1,2})$")
+CALLSIGN_WITH_SSID_RE: Final[re.Pattern[str]] = re.compile(r"^([A-Z0-9]{1,6})(?:-(\d{1,2}))?$")
 DEFAULT_SERVER_SOURCE: Final[str] = "SERVER-0"
 DIREWOLF_ENABLED_ENV: Final[str] = "PY_HAM_BBS_DIREWOLF_ENABLED"
 DIREWOLF_HOST_ENV: Final[str] = "PY_HAM_BBS_DIREWOLF_HOST"
@@ -70,7 +70,9 @@ class PendingAcknowledgementState:
 	origin_websocket: ServerConnection
 	origin_source: str
 	ack_required: AckReqValues
-	awaiting_sources: set[str]
+	awaiting_websockets: set[ServerConnection]
+	successful_websockets: set[ServerConnection]
+	failed_websockets: set[ServerConnection]
 	client_msg_id: str | None
 	timeout_task: asyncio.Task[None] | None
 
@@ -82,14 +84,15 @@ def now_iso() -> str:
 
 
 def normalize_station_id(raw_value: str) -> str | None:
-	"""Normalize a raw station ID value to the standard all caps CALL-SSID format, or return None if invalid."""
+	"""Normalize a raw station ID value to the standard all caps CALL-SSID format, defaulting missing SSID to 0."""
 
 	match = CALLSIGN_WITH_SSID_RE.fullmatch(raw_value.strip().upper())
 	if match is None:
 		return None
 
 	callsign = match.group(1)
-	ssid = int(match.group(2))
+	ssid_text = match.group(2)
+	ssid = int(ssid_text) if ssid_text is not None else 0
 	if not is_valid_callsign(callsign) or not (0 <= ssid <= 15):
 		return None
 
@@ -148,14 +151,14 @@ def parse_inbound_frame(raw_frame: dict[str, Any]) -> ValidatedInboundFrame:
 		raise InvalidFrameError("source must be a string")
 	source = normalize_station_id(source)
 	if source is None:
-		raise InvalidFrameError("source must be a valid station id in CALL-SSID format")
+		raise InvalidFrameError("source must be a valid station id in CALL or CALL-SSID format")
 
 	destination = raw_frame.get("destination")
 	if not isinstance(destination, str):
 		raise InvalidFrameError("destination must be a string")
 	destination = normalize_station_id(destination)
 	if destination is None:
-		raise InvalidFrameError("destination must be a valid station id in CALL-SSID format")
+		raise InvalidFrameError("destination must be a valid station id in CALL or CALL-SSID format")
 
 	ack_required: AckReqValues = normalize_ack_required(raw_frame.get("ack_required", 0))
 
@@ -181,6 +184,15 @@ def parse_inbound_frame(raw_frame: dict[str, Any]) -> ValidatedInboundFrame:
 			status = payload.get("status")
 			if status is None or not isinstance(status, str) or status not in VALID_ACK_STATUS_VALUES:
 				raise InvalidFrameError(f"ack payload status must be one of {VALID_ACK_STATUS_VALUES}")
+		elif frame_type == "control" and payload.get("subtype") == "verify":
+			content = payload.get("content")
+			if not isinstance(content, dict):
+				raise InvalidFrameError("verify payload must include content as a JSON object")
+			student_id = content.get("student_id")
+			if not isinstance(student_id, str) or student_id.strip() == "":
+				raise InvalidFrameError("verify payload must include student_id as a non-empty string")
+			if normalize_station_id(student_id) is None:
+				raise InvalidFrameError("verify payload student_id must be a valid CALL or CALL-SSID station id")
 		validated_payload = payload
 
 	return ValidatedInboundFrame(
@@ -224,7 +236,7 @@ def resolve_direwolf_client() -> DirewolfKISSClient | None:
 class MessageBrokerServer:
 	"""Core server class that manages client connections, message routing, and interactions with the message repository and Direwolf client."""
 
-	__slots__ = ("_store", "_server_source", "_direwolf_client", "_bound_sources", "_routes", "_pending_acks")
+	__slots__ = ("_store", "_server_source", "_direwolf_client", "_bound_sources", "_routes", "_pending_acks", "_verified_sources")
 
 	def __init__(self, store: MessageRepository, server_source: str, direwolf_client: DirewolfKISSClient | None = None) -> None:
 		self._store = store
@@ -233,6 +245,7 @@ class MessageBrokerServer:
 		self._bound_sources: dict[ServerConnection, str] = {}
 		self._routes: dict[str, set[ServerConnection]] = {}
 		self._pending_acks: dict[str, PendingAcknowledgementState] = {}
+		self._verified_sources: dict[ServerConnection, str] = {}
 
 	def _build_frame(
 		self,
@@ -261,7 +274,7 @@ class MessageBrokerServer:
 			frame["payload"] = bytes(frame["payload"]).hex()
 		return frame
 
-	def _save_frame(self, frame: dict[str, Any]) -> str:
+	def _save_frame(self, frame: dict[str, Any]) -> SaveFrameResult:
 		payload = frame["payload"]
 		if isinstance(payload, str):
 			payload_text = payload_to_store_text(bytes.fromhex(payload))
@@ -281,6 +294,9 @@ class MessageBrokerServer:
 			payload=payload_text,
 			client_msg_id=client_msg_id,
 		)
+
+	def _current_verified_source_for(self, websocket: ServerConnection) -> str | None:
+		return self._verified_sources.get(websocket)
 
 	async def _send_frame(self, websocket: ServerConnection, frame: dict[str, Any]) -> bool:
 		try:
@@ -302,8 +318,14 @@ class MessageBrokerServer:
 			return False, bound_source
 		return True, None
 
+	def try_bind_source(self, websocket: ServerConnection, source: str) -> tuple[bool, str | None]:
+		"""Public shim around _bind_source for callers that need to inspect bind behavior."""
+
+		return self._bind_source(websocket, source)
+
 	async def _remove_connection(self, websocket: ServerConnection) -> None:
 		bound_source = self._bound_sources.pop(websocket, None)
+		self._verified_sources.pop(websocket, None)
 		if bound_source is not None:
 			peers = self._routes.get(bound_source)
 			if peers is not None:
@@ -315,10 +337,10 @@ class MessageBrokerServer:
 			if state.origin_websocket is websocket:
 				self._pop_pending_ack(message_id)
 				continue
-			if bound_source is not None and bound_source in state.awaiting_sources:
-				state.awaiting_sources.discard(bound_source)
-				await self._send_pending_status(state, message_id, "failed")
-				self._pop_pending_ack(message_id)
+			if websocket in state.awaiting_websockets:
+				state.awaiting_websockets.discard(websocket)
+				state.failed_websockets.add(websocket)
+				await self._finish_pending_ack_if_ready(message_id, state)
 
 	def _resolve_recipients(self, destination: str) -> set[ServerConnection]:
 		return set(self._routes.get(destination, set()))
@@ -329,6 +351,14 @@ class MessageBrokerServer:
 			return
 		if not timeout_task.done():
 			timeout_task.cancel()
+
+	def _mark_pending_source_success(self, state: PendingAcknowledgementState, websocket: ServerConnection) -> None:
+		state.awaiting_websockets.discard(websocket)
+		state.successful_websockets.add(websocket)
+
+	def _mark_pending_source_failure(self, state: PendingAcknowledgementState, websocket: ServerConnection) -> None:
+		state.awaiting_websockets.discard(websocket)
+		state.failed_websockets.add(websocket)
 
 	def _pop_pending_ack(self, message_id: str) -> PendingAcknowledgementState | None:
 		state = self._pending_acks.pop(message_id, None)
@@ -344,10 +374,11 @@ class MessageBrokerServer:
 		state = self._pending_acks.get(message_id)
 		if state is None:
 			return
-		await self._send_pending_status(state, message_id, "failed")
-		self._pop_pending_ack(message_id)
+		state.failed_websockets.update(state.awaiting_websockets)
+		state.awaiting_websockets.clear()
+		await self._finish_pending_ack_if_ready(message_id, state)
 
-	def _create_canonical_frame(self, frame_type: str, parsed: ValidatedInboundFrame, frame_id: str | None = None, timestamp: str | None = None) -> dict[str, Any]:
+	def _create_canonical_frame(self, frame_type: str, parsed: ValidatedInboundFrame, frame_id: str | None = None, timestamp: str | None = None) -> tuple[dict[str, Any], bool]:
 		"""Build, persist, and return the canonical frame for a parsed inbound frame."""
 
 		canonical = self._build_frame(
@@ -360,13 +391,14 @@ class MessageBrokerServer:
 			frame_id=frame_id,
 			timestamp=timestamp,
 		)
-		canonical["id"] = self._save_frame(canonical)
-		return canonical
+		saved_frame = self._save_frame(canonical)
+		canonical["id"] = saved_frame
+		return canonical, saved_frame.inserted
 
-	async def _deliver_and_setup_pending(self, origin_ws: ServerConnection, origin_source: str, parsed: ValidatedInboundFrame, canonical: dict[str, Any]) -> set[str]:
+	async def _deliver_and_setup_pending(self, origin_ws: ServerConnection, origin_source: str, parsed: ValidatedInboundFrame, canonical: dict[str, Any]) -> set[ServerConnection]:
 		"""Fanout a canonical frame and set up pending ack state when required.
 
-		Returns the set of delivered recipient sources.
+		Returns the set of delivered recipient websockets.
 		"""
 
 		recipients = self._resolve_recipients(parsed.destination)
@@ -386,7 +418,9 @@ class MessageBrokerServer:
 					origin_websocket=origin_ws,
 					origin_source=origin_source,
 					ack_required=parsed.ack_required,
-					awaiting_sources=delivered,
+					awaiting_websockets=delivered,
+					successful_websockets=set(),
+					failed_websockets=set(),
 					client_msg_id=parsed.client_msg_id,
 					timeout_task=None,
 				)
@@ -394,16 +428,34 @@ class MessageBrokerServer:
 				state.timeout_task = asyncio.create_task(self._expire_pending_ack(message_id))
 		return delivered
 
-	async def _fanout(self, recipients: set[ServerConnection], frame: dict[str, Any]) -> set[str]:
-		delivered_sources: set[str] = set()
+	async def _finish_pending_ack_if_ready(self, message_id: str, state: PendingAcknowledgementState) -> bool:
+		if state.ack_required == 1:
+			if state.successful_websockets:
+				await self._send_pending_status(state, message_id, "processed")
+				self._pop_pending_ack(message_id)
+				return True
+			if not state.awaiting_websockets:
+				await self._send_pending_status(state, message_id, "failed")
+				self._pop_pending_ack(message_id)
+				return True
+			return False
+
+		if state.awaiting_websockets:
+			return False
+
+		final_status = "failed" if state.failed_websockets else "processed"
+		await self._send_pending_status(state, message_id, final_status)
+		self._pop_pending_ack(message_id)
+		return True
+
+	async def _fanout(self, recipients: set[ServerConnection], frame: dict[str, Any]) -> set[ServerConnection]:
+		delivered_websockets: set[ServerConnection] = set()
 		for recipient in recipients:
 			if await self._send_frame(recipient, frame):
-				recipient_source = self._bound_sources.get(recipient)
-				if recipient_source is not None:
-					delivered_sources.add(recipient_source)
+				delivered_websockets.add(recipient)
 			else:
 				await self._remove_connection(recipient)
-		return delivered_sources
+		return delivered_websockets
 
 	async def _send_to_direwolf(self, payload: bytes, source: str, destination: str) -> None:
 		if self._direwolf_client is None:
@@ -443,10 +495,13 @@ class MessageBrokerServer:
 		ack_for: str,
 		client_msg_id: str | None,
 		status: str,
+		extra_payload: dict[str, Any] | None = None,
 	) -> None:
 		payload: dict[str, Any] = {"ack_for": ack_for, "status": status}
 		if client_msg_id is not None:
 			payload["client_msg_id"] = client_msg_id
+		if extra_payload is not None:
+			payload.update(extra_payload)
 		ack_frame = self._build_frame(
 			frame_type="ack",
 			source=self._server_source,
@@ -466,45 +521,100 @@ class MessageBrokerServer:
 			status=status,
 		)
 
-	async def _handle_message(self, websocket: ServerConnection, frame: ValidatedInboundFrame) -> None:
-		if frame.client_msg_id is not None:
-			existing_server_id = self._store.get_server_id(frame.source, frame.client_msg_id)
-			if existing_server_id is not None:
-				if frame.ack_required != 0:
-					await self._send_acceptance_ack(
-						websocket=websocket,
-						destination=frame.source,
-						ack_for=existing_server_id,
-						client_msg_id=frame.client_msg_id,
-						status="received",
-					)
-				return
+	async def _handle_verification(self, websocket: ServerConnection, frame: ValidatedInboundFrame) -> None:
+		if not isinstance(frame.payload, dict):
+			return
 
+		canonical_frame, _ = self._create_canonical_frame("control", frame)
+		payload = frame.payload
+		content = payload.get("content")
+		if not isinstance(content, dict):
+			await self._send_error(
+				websocket=websocket,
+				message="verify payload must include content",
+				original_id=str(canonical_frame["id"]),
+				original_client_msg_id=frame.client_msg_id,
+				source_hint=frame.source,
+			)
+			return
+
+		student_id_value = content.get("student_id")
+		if not isinstance(student_id_value, str) or student_id_value.strip() == "":
+			await self._send_error(
+				websocket=websocket,
+				message="verify payload must include student_id",
+				original_id=str(canonical_frame["id"]),
+				original_client_msg_id=frame.client_msg_id,
+				source_hint=frame.source,
+			)
+			return
+
+		student_id = normalize_station_id(student_id_value)
+		if student_id is None:
+			await self._send_error(
+				websocket=websocket,
+				message="verify payload student_id must be a valid CALL-SSID station id",
+				original_id=str(canonical_frame["id"]),
+				original_client_msg_id=frame.client_msg_id,
+				source_hint=frame.source,
+			)
+			return
+
+		if self._store.get_allowed_student_name(student_id) is None:
+			await self._send_acceptance_ack(
+				websocket=websocket,
+				destination=frame.source,
+				ack_for=str(canonical_frame["id"]),
+				client_msg_id=frame.client_msg_id,
+				status="failed",
+				extra_payload={"student_id": student_id, "reason": "student id is not allowed"},
+			)
+			return
+
+		current_verified_source = self._verified_sources.get(websocket)
+		if current_verified_source is not None and current_verified_source != student_id:
+			await self._send_error(
+				websocket=websocket,
+				message=f"session is already verified for {current_verified_source}",
+				original_id=str(canonical_frame["id"]),
+				original_client_msg_id=frame.client_msg_id,
+				source_hint=frame.source,
+			)
+			return
+
+		self._verified_sources[websocket] = student_id
+		await self._send_acceptance_ack(
+			websocket=websocket,
+			destination=frame.source,
+			ack_for=str(canonical_frame["id"]),
+			client_msg_id=frame.client_msg_id,
+			status="processed",
+			extra_payload={"student_id": student_id},
+		)
+
+	async def _handle_message(self, websocket: ServerConnection, frame: ValidatedInboundFrame) -> None:
 		message_id = str(uuid7())
 		timestamp = now_iso()
-		canonical_message = self._create_canonical_frame("message", frame, frame_id=message_id, timestamp=timestamp)
+		canonical_message, inserted = self._create_canonical_frame("message", frame, frame_id=message_id, timestamp=timestamp)
+		if not inserted:
+			if frame.ack_required != 0:
+				await self._send_acceptance_ack(
+					websocket=websocket,
+					destination=frame.source,
+					ack_for=str(canonical_message["id"]),
+					client_msg_id=frame.client_msg_id,
+					status="received",
+				)
+			return
 		if isinstance(frame.payload, (bytes, bytearray)):
 			await self._send_to_direwolf(bytes(frame.payload), frame.source, frame.destination)
 		await self._deliver_and_setup_pending(websocket, frame.source, frame, canonical_message)
 
 	async def _handle_passthrough(self, websocket: ServerConnection, frame: ValidatedInboundFrame) -> None:
-		if frame.client_msg_id is not None:
-			existing_server_id = self._store.get_server_id(frame.source, frame.client_msg_id)
-			if existing_server_id is not None:
-				if frame.ack_required != 0:
-					await self._send_acceptance_ack(
-						websocket=websocket,
-						destination=frame.source,
-						ack_for=existing_server_id,
-						client_msg_id=frame.client_msg_id,
-						status="received",
-					)
-				return
-
-		canonical_frame = self._create_canonical_frame(frame.frame_type, frame)
+		canonical_frame, _ = self._create_canonical_frame(frame.frame_type, frame)
 		await self._deliver_and_setup_pending(websocket, frame.source, frame, canonical_frame)
 
-	async def _handle_ack(self, frame: ValidatedInboundFrame) -> None:
+	async def _handle_ack(self, websocket: ServerConnection, frame: ValidatedInboundFrame) -> None:
 		if not isinstance(frame.payload, dict):
 			return
 
@@ -513,7 +623,7 @@ class MessageBrokerServer:
 			return
 
 		status_value = frame.payload.get("status")
-		incoming_status = status_value if isinstance(status_value, str) and status_value in VALID_ACK_STATUS_VALUES else "received"
+		incoming_status = cast(AckStatValues, status_value)
 		ack_payload: dict[str, Any] = {
 			"ack_for": ack_for_value,
 			"status": incoming_status,
@@ -538,24 +648,21 @@ class MessageBrokerServer:
 			return
 
 		if incoming_status == "failed":
-			await self._send_pending_status(pending_state, ack_for_value, "failed")
-			self._pop_pending_ack(ack_for_value)
+			self._mark_pending_source_failure(pending_state, websocket)
+			await self._finish_pending_ack_if_ready(ack_for_value, pending_state)
 			return
 
-		if frame.source in pending_state.awaiting_sources:
-			pending_state.awaiting_sources.discard(frame.source)
+		self._mark_pending_source_success(pending_state, websocket)
 
 		if pending_state.ack_required == 1:
-			await self._send_pending_status(pending_state, ack_for_value, "processed")
-			self._pop_pending_ack(ack_for_value)
+			await self._finish_pending_ack_if_ready(ack_for_value, pending_state)
 			return
 
-		if pending_state.awaiting_sources:
+		if pending_state.awaiting_websockets:
 			await self._send_pending_status(pending_state, ack_for_value, "received")
 			return
 
-		await self._send_pending_status(pending_state, ack_for_value, "processed")
-		self._pop_pending_ack(ack_for_value)
+		await self._finish_pending_ack_if_ready(ack_for_value, pending_state)
 
 	async def _process_frame(self, websocket: ServerConnection, raw_frame: dict[str, Any]) -> None:
 		source_raw = raw_frame.get("source")
@@ -575,6 +682,30 @@ class MessageBrokerServer:
 			)
 			return
 
+		if parsed_frame.frame_type == "control" and isinstance(parsed_frame.payload, dict) and parsed_frame.payload.get("subtype") == "verify":
+			await self._handle_verification(websocket, parsed_frame)
+			return
+
+		verified_source = self._current_verified_source_for(websocket)
+		if verified_source is None:
+			await self._send_error(
+				websocket=websocket,
+				message="student id must be verified before sending frames",
+				original_id=original_id,
+				original_client_msg_id=original_client_msg_id,
+				source_hint=parsed_frame.source,
+			)
+			return
+		if parsed_frame.source != verified_source:
+			await self._send_error(
+				websocket=websocket,
+				message=f"source must match verified student route {verified_source}",
+				original_id=original_id,
+				original_client_msg_id=original_client_msg_id,
+				source_hint=parsed_frame.source,
+			)
+			return
+
 		bind_ok, bound_source = self._bind_source(websocket, parsed_frame.source)
 		if not bind_ok:
 			await self._send_error(
@@ -590,7 +721,7 @@ class MessageBrokerServer:
 			await self._handle_message(websocket, parsed_frame)
 			return
 		if parsed_frame.frame_type == "ack":
-			await self._handle_ack(parsed_frame)
+			await self._handle_ack(websocket, parsed_frame)
 			return
 		await self._handle_passthrough(websocket, parsed_frame)
 
@@ -655,7 +786,6 @@ async def main() -> None:
 	try:
 		async with serve(protocol_server.handler, "0.0.0.0", 8765) as server:  # noqa: S104
 			logger.info("Protocol server started on ws://0.0.0.0:8765")
-			print("Protocol server started on ws://0.0.0.0:8765")
 			await server.serve_forever()
 	finally:
 		if direwolf_client is not None:

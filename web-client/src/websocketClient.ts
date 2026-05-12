@@ -2,8 +2,9 @@ const FEND = 0xc0;
 const FESC = 0xdb;
 const TFEND = 0xdc;
 const TFESC = 0xdd;
-const CALLSIGN_WITH_SSID_RE = /^([A-Z0-9]{1,6})-(\d{1,2})$/;
+const CALLSIGN_WITH_SSID_RE = /^([A-Z0-9]{1,6})(?:-(\d{1,2}))?$/;
 const MAX_PAYLOAD_PREVIEW = 180;
+const PROTOCOL_SERVER_SOURCE = "SERVER-0";
 
 type PacketDirection = "IN" | "OUT";
 
@@ -18,6 +19,7 @@ interface StationId {
 }
 
 interface SocketClient {
+	verifyStudentId: (studentId: string) => Promise<string>;
 	setRoute: (sourceCallsign: string, destinationCallsign: string) => void;
 	sendText: (text: string) => void;
 	dispose: () => void;
@@ -42,7 +44,7 @@ export function formatNowISO8601(): string {
 	// Calculate timezone offset
 	const offset = -now.getTimezoneOffset();
 	const offsetSign = offset >= 0 ? '+' : '-';
-	const offsetHours = String(Math.abs(Math.floor(offset / 60))).padStart(2, '0');
+	const offsetHours = String(Math.trunc(Math.abs(offset) / 60)).padStart(2, '0');
 	const offsetMinutes = String(Math.abs(offset % 60)).padStart(2, '0');
 	
 	return `${year}-${month}-${date}T${hours}:${minutes}:${seconds}.${ms}${offsetSign}${offsetHours}:${offsetMinutes}`;
@@ -57,10 +59,10 @@ export function normalizeStationId(value: string): string | null {
 
 	const callsign = match[1];
 	const ssidText = match[2];
-	if (callsign === undefined || ssidText === undefined) {
+	if (callsign === undefined) {
 		return null;
 	}
-	const ssid = Number.parseInt(ssidText, 10);
+	const ssid = ssidText === undefined ? 0 : Number.parseInt(ssidText, 10);
 	if (Number.isNaN(ssid) || ssid < 0 || ssid > 15) {
 		return null;
 	}
@@ -185,12 +187,33 @@ function toBindFrame(sourceCallsign: string): string | null {
 	return JSON.stringify({
 		type: "control",
 		source,
-		destination: source,
+		destination: PROTOCOL_SERVER_SOURCE,
 		ack_required: 0,
 		payload: {
 			subtype: "bind",
 			content: {
 				callsign: source,
+			},
+		},
+	});
+}
+
+function toVerifyFrame(studentId: string, clientMsgId: string): string | null {
+	const normalizedStudentId = normalizeStationId(studentId);
+	if (normalizedStudentId === null) {
+		return null;
+	}
+
+	return JSON.stringify({
+		type: "control",
+		client_msg_id: clientMsgId,
+		source: PROTOCOL_SERVER_SOURCE,
+		destination: PROTOCOL_SERVER_SOURCE,
+		ack_required: 0,
+		payload: {
+			subtype: "verify",
+			content: {
+				student_id: normalizedStudentId,
 			},
 		},
 	});
@@ -265,12 +288,19 @@ function toAckFrame(incomingPacket: string, localSourceCallsign: string, clientM
 	});
 }
 
-export function createSocketClient(url: string, sourceCallsign: string, destinationCallsign: string, callbacks: SocketCallbacks): SocketClient {
-	let assignedSource = normalizeStationId(sourceCallsign) ?? sourceCallsign;
-	let assignedDestination = normalizeStationId(destinationCallsign) ?? destinationCallsign;
+export function createSocketClient(url: string, callbacks: SocketCallbacks): SocketClient {
+	let assignedSource: string | null = null;
+	let assignedDestination: string | null = null;
+	let boundSource: string | null = null;
 	let socketGeneration = 0;
 	let socket: WebSocket | null = null;
 	let clientCounter = 0;
+	let pendingVerification: {
+		studentId: string;
+		clientMsgId: string;
+		resolve: (sourceCallsign: string) => void;
+		reject: (error: Error) => void;
+	} | null = null;
 
 	const nextClientMsgId = (): string => {
 		clientCounter += 1;
@@ -281,9 +311,20 @@ export function createSocketClient(url: string, sourceCallsign: string, destinat
 		callbacks.onLogLine(line);
 	};
 
+	const rejectPendingVerification = (message: string): void => {
+		const pending = pendingVerification;
+		if (pending === null) {
+			return;
+		}
+
+		pendingVerification = null;
+		pending.reject(new Error(message));
+	};
+
 	const closeSocket = (): void => {
 		const currentSocket = socket;
 		socket = null;
+		boundSource = null;
 		if (currentSocket === null) {
 			return;
 		}
@@ -293,6 +334,78 @@ export function createSocketClient(url: string, sourceCallsign: string, destinat
 		} catch {
 			// Ignore shutdown errors.
 		}
+	};
+
+	const syncSocketBinding = (): void => {
+		const currentSocket = socket;
+		if (
+			currentSocket === null
+			|| currentSocket.readyState !== WebSocket.OPEN
+			|| pendingVerification !== null
+			|| assignedSource === null
+		)
+		{
+			return;
+		}
+
+		if (boundSource === assignedSource) {
+			return;
+		}
+
+		const bindFrame = toBindFrame(assignedSource);
+		if (bindFrame === null) {
+			pushLog(`${formatNowISO8601()} OUT DROP invalid-callsign`);
+			return;
+		}
+
+		currentSocket.send(bindFrame);
+		boundSource = assignedSource;
+		pushLog(formatPacketLog("OUT", bindFrame));
+		callbacks.onStatus(`Bound as ${assignedSource} and ready to relay messages.`);
+	};
+
+	const handleVerificationAck = (packetText: string): boolean => {
+		let parsedUnknown: unknown;
+		try {
+			parsedUnknown = JSON.parse(packetText) as unknown;
+		} catch {
+			return true;
+		}
+
+		if (!isRecord(parsedUnknown) || parsedUnknown.type !== "ack") {
+			return false;
+		}
+
+		const pending = pendingVerification;
+		if (pending === null) {
+			return false;
+		}
+
+		const packetClientMsgId = typeof parsedUnknown.client_msg_id === "string" ? parsedUnknown.client_msg_id : null;
+		const payload = isRecord(parsedUnknown.payload) ? parsedUnknown.payload : null;
+		const payloadClientMsgId = typeof payload?.client_msg_id === "string" ? payload.client_msg_id : null;
+		if (packetClientMsgId !== pending.clientMsgId && payloadClientMsgId !== pending.clientMsgId) {
+			return true;
+		}
+
+		const status = typeof payload?.status === "string" ? payload.status : null;
+		if (status === "processed") {
+			pendingVerification = null;
+			assignedSource = pending.studentId;
+			boundSource = null;
+			pending.resolve(pending.studentId);
+			syncSocketBinding();
+			return true;
+		}
+
+		if (status === "failed") {
+			const reason = typeof payload?.reason === "string" ? payload.reason : "Student ID verification failed.";
+			rejectPendingVerification(reason);
+			return true;
+		}
+
+		rejectPendingVerification("Verification response was malformed.");
+		return true;
 	};
 
 	const openSocket = (): void => {
@@ -306,7 +419,8 @@ export function createSocketClient(url: string, sourceCallsign: string, destinat
 			nextSocket = new WebSocket(url);
 		} catch (error) {
 			callbacks.onStatus(`Unable to open websocket: ${String(error)}`);
-		pushLog(`${formatNowISO8601()} OUT DROP websocket-open-failed`);
+			pushLog(`${formatNowISO8601()} OUT DROP websocket-open-failed`);
+			rejectPendingVerification(`Unable to open websocket: ${String(error)}`);
 			return;
 		}
 
@@ -317,15 +431,24 @@ export function createSocketClient(url: string, sourceCallsign: string, destinat
 				return;
 			}
 
-			const bindFrame = toBindFrame(assignedSource);
-			if (bindFrame === null) {
-				pushLog(`${formatNowISO8601()} OUT DROP invalid-callsign`);
+			if (pendingVerification !== null) {
+				const verifyFrame = toVerifyFrame(pendingVerification.studentId, pendingVerification.clientMsgId);
+				if (verifyFrame === null) {
+					rejectPendingVerification("Unable to build verification frame.");
+					pushLog(`${formatNowISO8601()} OUT DROP invalid-student-id`);
+					return;
+				}
+
+				nextSocket.send(verifyFrame);
+				pushLog(formatPacketLog("OUT", verifyFrame));
+				callbacks.onStatus(`Verifying student ID ${pendingVerification.studentId}.`);
 				return;
 			}
 
-			nextSocket.send(bindFrame);
-			pushLog(formatPacketLog("OUT", bindFrame));
-			callbacks.onStatus(`Bound as ${assignedSource} and ready to relay messages.`);
+			syncSocketBinding();
+			if (assignedSource === null) {
+				callbacks.onStatus("Socket opened. Verify a student ID to continue.");
+			}
 		};
 
 		nextSocket.onmessage = (event) => {
@@ -339,7 +462,11 @@ export function createSocketClient(url: string, sourceCallsign: string, destinat
 
 			pushLog(formatPacketLog("IN", event.data));
 
-			const ackFrame = toAckFrame(event.data, assignedSource, nextClientMsgId());
+			if (pendingVerification !== null && handleVerificationAck(event.data)) {
+				return;
+			}
+
+			const ackFrame = toAckFrame(event.data, assignedSource ?? "", nextClientMsgId());
 			if (ackFrame === null) {
 				return;
 			}
@@ -354,7 +481,11 @@ export function createSocketClient(url: string, sourceCallsign: string, destinat
 			}
 
 			socket = null;
-			callbacks.onStatus("Socket closed. Verify the callsign fields to reconnect.");
+			boundSource = null;
+			if (pendingVerification !== null) {
+				rejectPendingVerification("Verification socket closed before it completed.");
+			}
+			callbacks.onStatus("Socket closed. Verify the student ID again to reconnect.");
 		};
 
 		nextSocket.onerror = () => {
@@ -364,6 +495,34 @@ export function createSocketClient(url: string, sourceCallsign: string, destinat
 
 			callbacks.onStatus(`Websocket error at ${url}.`);
 		};
+	};
+
+	const verifyStudentId = (studentId: string): Promise<string> => {
+		const normalizedStudentId = normalizeStationId(studentId);
+		if (normalizedStudentId === null) {
+			return Promise.reject(new Error("Student ID must be a valid callsign like VK3ABC or VK3ABC-0."));
+		}
+
+		if (pendingVerification !== null) {
+			const pending = pendingVerification;
+			pendingVerification = null;
+			pending.reject(new Error("A verification request is already in progress."));
+		}
+
+		assignedSource = null;
+		assignedDestination = null;
+		boundSource = null;
+		closeSocket();
+
+		return new Promise<string>((resolve, reject) => {
+			pendingVerification = {
+				studentId: normalizedStudentId,
+				clientMsgId: nextClientMsgId(),
+				resolve,
+				reject,
+			};
+			openSocket();
+		});
 	};
 
 	const setRoute = (nextSourceCallsign: string, nextDestinationCallsign: string): void => {
@@ -379,15 +538,34 @@ export function createSocketClient(url: string, sourceCallsign: string, destinat
 		assignedSource = normalizedSource;
 		assignedDestination = normalizedDestination;
 
-		if (currentSocket === null || currentSocket.readyState !== WebSocket.OPEN || sourceChanged) {
-			openSocket();
+		if (pendingVerification !== null) {
+			return;
 		}
+
+		if (currentSocket === null || currentSocket.readyState !== WebSocket.OPEN) {
+			openSocket();
+			return;
+		}
+
+		if (boundSource !== null && sourceChanged && boundSource !== normalizedSource) {
+			openSocket();
+			return;
+		}
+
+		syncSocketBinding();
 	};
 
 	const sendText = (text: string): void => {
 		const currentSocket = socket;
-		if (currentSocket === null || currentSocket.readyState !== WebSocket.OPEN) {
-			pushLog(`${formatNowISO8601()} OUT DROP socket-not-open`);
+		if (
+			currentSocket === null
+			|| currentSocket.readyState !== WebSocket.OPEN
+			|| assignedSource === null
+			|| assignedDestination === null
+			|| boundSource !== assignedSource
+		)
+		{
+			pushLog(`${formatNowISO8601()} OUT DROP route-not-verified`);
 			return;
 		}
 
@@ -403,10 +581,16 @@ export function createSocketClient(url: string, sourceCallsign: string, destinat
 
 	const dispose = (): void => {
 		socketGeneration += 1;
+		if (pendingVerification !== null) {
+			const pending = pendingVerification;
+			pendingVerification = null;
+			pending.reject(new Error("Verification was cancelled."));
+		}
 		closeSocket();
 	};
 
 	return {
+		verifyStudentId,
 		setRoute,
 		sendText,
 		dispose,

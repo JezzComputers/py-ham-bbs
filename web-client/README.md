@@ -1,8 +1,10 @@
-# test_site
+# Web Client
 
-Static site served localy by Caddy.
+Static site served locally by Caddy.
 
-The frontend now uses a small websocket client in [src/websocketClient.ts](src/websocketClient.ts) so the page can bind the callsign pair, send outbound text, and log inbound frames in one place.
+The frontend now uses a small websocket client in [src/websocketClient.ts](src/websocketClient.ts) so the page can verify a student ID/callsign, bind the normalized source station id returned by the server, send outbound text, and log inbound frames in one place.
+
+The websocket endpoint is expected to be reachable via LAN. `server.py` is the public-facing websocket wrapper; Caddy simply proxies `/ws` to it so the browser can talk to the Python service directly without exposing Direwolf.
 
 ## Run
 
