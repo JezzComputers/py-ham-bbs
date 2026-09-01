@@ -1,0 +1,22 @@
+services:
+  direwolf:
+    build:
+      context: .
+      dockerfile: docker/direwolf-w-hamlib/Dockerfile
+      args:
+        HAMLIB_VER: "4.7.2"
+    image: direwolf:test
+    container_name: direwolf
+    restart: unless-stopped
+    ports:
+      - "8001:8001"  # Direwolf KISS
+      - "4532:4532"  # rigctld
+    devices:
+      - "/dev/snd:/dev/snd"
+      - "/dev/ttyACM0:/dev/ttyACM0"
+    group_add:
+      - audio
+      - dialout
+      - uucp
+    volumes:
+      - ./direwolf.conf:/etc/direwolf/direwolf.conf:ro

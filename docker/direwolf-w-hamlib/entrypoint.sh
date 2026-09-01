@@ -1,0 +1,27 @@
+#!/bin/sh
+set -e
+
+# Start rigctld in the background
+rigctld -m 3085 -r /dev/ttyACM0 -s 115200 -T 127.0.0.1 -t 4532 &
+RIGCTLD_PID=$!
+
+# Kill rigctld if this script exits/dies for any reason
+trap 'kill "$RIGCTLD_PID" 2>/dev/null' EXIT INT TERM
+
+# Wait for rigctld to bind, with a timeout
+TIMEOUT=15
+ELAPSED=0
+until nc -z 127.0.0.1 4532; do
+	if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+		echo "rigctld failed to bind to port 4532 within ${TIMEOUT}s" >&2
+		exit 1
+	fi
+	sleep 0.5
+	ELAPSED=$((ELAPSED + 1))
+	ELAPSED_SEC=$(awk "BEGIN {print $ELAPSED * 0.5}")
+done
+
+echo "rigctld is up after ${ELAPSED_SEC:-0}s, starting direwolf"
+
+# Start Direwolf in the foreground (PID 1)
+exec direwolf -c /etc/direwolf/direwolf.conf
