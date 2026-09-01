@@ -47,4 +47,4 @@ RUN chmod +x /entrypoint.sh
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 	CMD nc -z 127.0.0.1 4532 && nc -z 127.0.0.1 8001 || exit 1
 
-CMD ["/entrypoint.sh"]
+ENTRYPOINT ["/entrypoint.sh"]
