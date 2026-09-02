@@ -1,12 +1,12 @@
 services:
-  direwolf:
+  direwolf-hamlib:
     build:
       context: .
-      dockerfile: docker/direwolf-w-hamlib/Dockerfile
+      dockerfile: docker/direwolf-hamlib/Dockerfile
       args:
         HAMLIB_VER: "4.7.2"
-    image: direwolf:test
-    container_name: direwolf
+    image: direwolf-hamlib:test
+    container_name: direwolf-hamlib
     restart: unless-stopped
     ports:
       - "8001:8001"  # Direwolf KISS

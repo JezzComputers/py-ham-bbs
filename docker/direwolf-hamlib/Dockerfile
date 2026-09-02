@@ -41,7 +41,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /opt/radio /usr/local
 RUN ldconfig
 
-COPY docker/direwolf-w-hamlib/entrypoint.sh /entrypoint.sh
+COPY docker/direwolf-hamlib/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

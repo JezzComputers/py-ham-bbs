@@ -1,8 +1,12 @@
 #!/bin/sh
 set -e
 
+RED='\033[0;31m'
+NC='\033[0m'
+
 # Start rigctld in the background
-rigctld -m 3085 -r /dev/ttyACM0 -s 115200 -T 127.0.0.1 -t 4532 &
+# rigctld -m 3085 -r /dev/ttyACM0 -s 115200 -T 127.0.0.1 -t 4532 &
+rigctld -m 1 -r /dev/null -T 127.0.0.1 -t 4532 &
 RIGCTLD_PID=$!
 
 # Kill rigctld if this script exits/dies for any reason
@@ -13,7 +17,7 @@ TIMEOUT=15
 ELAPSED=0
 until nc -z 127.0.0.1 4532; do
 	if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
-		echo "rigctld failed to bind to port 4532 within ${TIMEOUT}s" >&2
+		printf "${RED}rigctld failed to bind to port 4532 within %ss${NC}\n" "$TIMEOUT" >&2
 		exit 1
 	fi
 	sleep 0.5
