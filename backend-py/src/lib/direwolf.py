@@ -2,13 +2,15 @@
 
 import socket
 from typing import Final
+import os
 
 from .ax25 import AX25FrameBuilder, InvalidAX25Error
 from .kiss import FEND, InvalidKISSError, KISSFrameBuilder, KISSFrameConfig
 from .terminal import BLUE, CYAN, GREEN, MAGENTA, RESET
 
-DEFAULT_KISS_HOST: Final[str] = "127.0.0.1"
-DEFAULT_KISS_PORT: Final[int] = 8001
+
+DEFAULT_KISS_HOST: Final[str] = os.getenv("DIREWOLF_HOST", "127.0.0.1")
+DEFAULT_KISS_PORT: Final[int] = int(os.getenv("DIREWOFL_PORT", "8001"))
 MIN_KISS_FRAME_LEN: Final[int] = 3
 MIN_KISS_AX25_LEN: Final[int] = 19
 

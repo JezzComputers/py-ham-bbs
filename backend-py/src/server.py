@@ -1,3 +1,5 @@
+from websockets import Response, Request
+from websockets.datastructures import Headers
 from dataclasses import dataclass
 from datetime import UTC, datetime, tzinfo
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -769,6 +771,12 @@ class MessageBrokerServer:
 			logger.info("Client disconnected: %s", websocket.remote_address)
 
 
+async def health_check(connection: ServerConnection, request: Request) -> Response | None:
+	if request.path == "/healthz":
+		return Response(200, "OK", Headers(), body=b"ok\n")
+	return None
+
+
 async def main() -> None:
 	logging.basicConfig(level=logging.INFO)
 	logger.info("Started")
@@ -784,7 +792,7 @@ async def main() -> None:
 		logger.info("Direwolf KISS enabled: %s:%s", direwolf_client.host, direwolf_client.port)
 
 	try:
-		async with serve(protocol_server.handler, "0.0.0.0", 8765) as server:  # noqa: S104
+		async with serve(protocol_server.handler, "0.0.0.0", 8765, process_request=health_check) as server:  # noqa: S104
 			logger.info("Protocol server started on ws://0.0.0.0:8765")
 			await server.serve_forever()
 	finally:

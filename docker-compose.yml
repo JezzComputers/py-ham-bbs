@@ -14,10 +14,31 @@ services:
       - "4532:4532"  # rigctld
     devices:
       - "/dev/snd:/dev/snd"
-      - "/dev/ttyACM0:/dev/ttyACM0"
+      # - "/dev/ttyACM0:/dev/ttyACM0"
     group_add:
       - audio
       - dialout
       - uucp
     volumes:
       - ./direwolf.conf:/etc/direwolf/direwolf.conf:ro
+
+  backend-py:
+    build:
+      context: .
+      dockerfile: backend-py/Dockerfile
+      args:
+        APP_GID: "${GID}"
+    image: backend-py:test
+    container_name: backend-py
+    restart: unless-stopped
+    user: "${UID}:${GID}"
+    ports:
+      - "8765:8765"
+    environment:
+      - DIREWOLF_HOST=direwolf-hamlib
+      - DIREWOLF_PORT=8001
+    volumes:
+      - ./backend-py/py_ham_bbs_protocol.db:/app/py_ham_bbs_protocol.db:rw
+    depends_on:
+      direwolf-hamlib:
+        condition: service_healthy
