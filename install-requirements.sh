@@ -30,45 +30,54 @@ sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin d
 echo "=== 6. Configuring User Groups ==="
 # Creates group if it doesn't exist, adds the user running the script
 sudo groupadd -f docker
-sudo usermod -aG docker "$USER"
+sudo usermod -aG docker,dialout,uucp,audio "$USER"
 
 echo "=== 7. Applying Dynamic Overclocking ==="
+
 CONFIG_FILE="/boot/firmware/config.txt"
 
-# Read the file and clean up missing trailing newlines
-MODEL_STR=$(tr -d '\0' < /proc/device-tree/model)
+if [ -f /proc/device-tree/model ]; then
+	MODEL_STR=$(tr -d '\0' < /proc/device-tree/model)
 
-# Safeguard: Check if the file already contains an active 'arm_freq' configuration
-if grep -q "^[[:space:]]*arm_freq" "$CONFIG_FILE"; then
-        echo "Notice: Existing 'arm_freq' setting detected in $CONFIG_FILE."
-        echo "Skipping dynamic overclocking to preserve your custom settings."
-else
-        if echo "$MODEL_STR" | grep -q "Raspberry Pi 4"; then
-                echo "Detected: $MODEL_STR"
-                echo "Appending Pi 4 overclock parameters..."
-                sudo tee -a "$CONFIG_FILE" <<EOF
+	if grep -Eq "^\s*(arm_freq|over_voltage|over_voltage_delta|gpu_freq)" "$CONFIG_FILE"; then
+		echo "Notice: Existing overclock settings detected."
+		echo "Skipping dynamic overclocking to preserve your custom configuration."
+	else
+		case "$MODEL_STR" in
+			*"Raspberry Pi 4"*)
+				echo "Detected: $MODEL_STR"
+				echo "Appending Pi 4 overclock parameters..."
+				sudo tee -a "$CONFIG_FILE" <<EOF
 
 # Raspberry Pi 4 Overclock Settings
-over_voltage=6 # Voltage boost (default is 0)
-arm_freq=2000 # CPU to 2.0 GHz (default is 1.5 GHz)
-gpu_freq=750 # GPU to 750 MHz (default is 500 MHz)
+over_voltage=6
+arm_freq=2000
+gpu_freq=750
 EOF
-
-        elif echo "$MODEL_STR" | grep -q "Raspberry Pi 5"; then
-                echo "Detected: $MODEL_STR"
-                echo "Appending Pi 5 overclock parameters..."
-                sudo tee -a "$CONFIG_FILE" <<EOF
+				;;
+			*"Raspberry Pi 5"*)
+				echo "Detected: $MODEL_STR"
+				echo "Appending Pi 5 overclock parameters..."
+				sudo tee -a "$CONFIG_FILE" <<EOF
 
 # Raspberry Pi 5 Overclock Settings
-over_voltage_delta=50000 # Adds ~0.05V to support higher frequencies
-arm_freq=3000 # CPU to 3.0 GHz (default is 2.4 GHz)
-gpu_freq=1000 # GPU to 1.0 GHz (default ~910 MHz)
+over_voltage_delta=30000
+arm_freq=2800
+gpu_freq=1000
 EOF
-
-        else
-                echo "Warning: Did not explicitly detect a Pi 4 or Pi 5 ($MODEL_STR). Skipping overclock."
-        fi
+				;;
+			*)
+				echo "Warning: Unknown Pi model ($MODEL_STR). Skipping overclock."
+				;;
+		esac
+	fi
+else
+	echo "Non-Raspberry Pi system detected — skipping overclocking."
 fi
+
+echo "=== 8. Generating docker-compose .env file ==="
+printf "UID=%s\nGID=%s\n" "$(id -u)" "$(id -g)" > .env
+echo ".env file created with UID=$(id -u) and GID=$(id -g)"
 
 echo "=== Setup Complete ==="
 echo "Please reboot using 'sudo reboot' to apply changes."
