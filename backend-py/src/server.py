@@ -771,10 +771,26 @@ class MessageBrokerServer:
 			logger.info("Client disconnected: %s", websocket.remote_address)
 
 
-async def health_check(connection: ServerConnection, request: Request) -> Response | None:
-	if request.path == "/healthz":
-		return Response(200, "OK", Headers(), body=b"ok\n")
-	return None
+# async def health_check(connection: ServerConnection, request: Request) -> Response | None:
+# 	if request.path == "/healthz":
+# 		return Response(200, "OK", Headers(), body=b"ok\n")
+# 	return None
+
+# class HealthcheckFilter(logging.Filter):
+# 	def filter(self, record: logging.LogRecord) -> bool:
+# 		msg = record.getMessage()
+# 		return "/healthz" not in msg
+
+
+async def health_server() -> None:
+	async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+		writer.write(b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\nok\n")
+		await writer.drain()
+		writer.close()
+
+	server = await asyncio.start_server(handle, "0.0.0.0", 8080)
+	async with server:
+		await server.serve_forever()
 
 
 async def main() -> None:
@@ -792,9 +808,11 @@ async def main() -> None:
 		logger.info("Direwolf KISS enabled: %s:%s", direwolf_client.host, direwolf_client.port)
 
 	try:
-		async with serve(protocol_server.handler, "0.0.0.0", 8765, process_request=health_check) as server:  # noqa: S104
+		async with serve(protocol_server.handler, "0.0.0.0", 8765) as server:  # noqa: S104
 			logger.info("Protocol server started on ws://0.0.0.0:8765")
+			health_task = asyncio.create_task(health_server())
 			await server.serve_forever()
+			health_task.cancel()
 	finally:
 		if direwolf_client is not None:
 			direwolf_client.close()

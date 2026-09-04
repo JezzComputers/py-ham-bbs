@@ -42,3 +42,16 @@ services:
     depends_on:
       direwolf-hamlib:
         condition: service_healthy
+
+  frontend-ts:
+    build:
+      context: frontend-ts
+      dockerfile: Dockerfile
+    image: frontend-ts:test
+    container_name: frontend-ts
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      backend-py:
+        condition: service_healthy

@@ -3,7 +3,7 @@
 	encode zstd gzip
 	file_server
 
-	reverse_proxy /ws localhost:8765
+	reverse_proxy /ws backend-py:8765
 
 	@html {
 		path *.html

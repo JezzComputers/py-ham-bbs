@@ -32,7 +32,10 @@ RUN chgrp ${APP_GID} /app && chmod g+w /app
 
 EXPOSE 8765
 
-HEALTHCHECK --interval=1m --timeout=3s --start-period=10s --retries=3 \
-	CMD python3 -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8765/healthz', timeout=2).status==200 else 1)"
+HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
+	CMD python3 -c "import socket, sys; \
+	s = socket.socket(); s.settimeout(2); \
+	s.connect(('127.0.0.1', 8080)); \
+	sys.exit(0 if b'200 OK' in s.recv(1024) else 1)"
 
 ENTRYPOINT ["python3", "src/server.py"]
