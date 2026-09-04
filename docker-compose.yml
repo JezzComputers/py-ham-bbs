@@ -15,12 +15,18 @@ services:
     devices:
       - "/dev/snd:/dev/snd"
       # - "/dev/ttyACM0:/dev/ttyACM0"
+    ipc: host  # TMP
     group_add:
+      - 995  # TMP
       - audio
       - dialout
       - uucp
     volumes:
       - ./direwolf.conf:/etc/direwolf/direwolf.conf:ro
+      - /run/user/1000/pulse/native:/tmp/pulseaudio.socket:ro  # TMP
+      - ~/.config/pulse/cookie:/root/.config/pulse/cookie:ro  # TMP
+    environment:
+      - PULSE_SERVER=unix:/tmp/pulseaudio.socket  # TMP
 
   backend-py:
     build:
