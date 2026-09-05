@@ -4,14 +4,15 @@ set -e
 RED='\033[0;31m'
 NC='\033[0m'
 
-# Start rigctld in the background
-# rigctld -m 3085 -r /dev/ttyACM0 -s 115200 -T 127.0.0.1 -t 4532 &
-# rigctld -m 1 -r /dev/null -T 127.0.0.1 -t 4532 &
-rigctld -m 1 -r /dev/null -T 0.0.0.0 -t 4532 &
-RIGCTLD_PID=$!
+RADIO_MODEL="${RADIO_MODEL:-1}"
+RADIO_DEVICE="${RADIO_DEVICE:-/dev/null}"
 
-# Kill rigctld if this script exits/dies for any reason
-trap 'kill "$RIGCTLD_PID" 2>/dev/null' EXIT INT TERM
+STATUS_LOG=/tmp/direwolf-startup.log
+: > "$STATUS_LOG"  # truncate fresh each start
+
+# Start rigctld in the background
+rigctld -m ${RADIO_MODEL} -r "${RADIO_DEVICE}" -s 115200 -T 0.0.0.0 -t 4532 &
+RIGCTLD_PID=$!
 
 # Wait for rigctld to bind, with a timeout
 TIMEOUT=15
@@ -28,5 +29,11 @@ done
 
 echo "rigctld is up after ${ELAPSED_SEC:-0}s, starting direwolf"
 
-# Start Direwolf in the foreground (PID 1)
-exec direwolf -c /etc/direwolf/direwolf.conf
+tail -f "$STATUS_LOG" &
+TAIL_PID=$!
+
+direwolf -c /etc/direwolf/direwolf.conf > "$STATUS_LOG" 2>&1 &
+DIREWOLF_PID=$!
+
+trap 'kill "$RIGCTLD_PID" "$DIREWOLF_PID" "$TAIL_PID" 2>/dev/null' EXIT INT TERM
+wait "$DIREWOLF_PID"

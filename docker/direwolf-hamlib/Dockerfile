@@ -36,6 +36,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	libudev1 \
 	libavahi-client3 \
 	netcat-openbsd \
+	gettext-base \
 	&& rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /opt/radio /usr/local
@@ -46,7 +47,8 @@ RUN chmod +x /entrypoint.sh
 
 EXPOSE 4532 8001
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-	CMD nc -z 127.0.0.1 4532 && pidof direwolf > /dev/null || exit 1
+# HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=5s --timeout=3s --start-period=15s --retries=3 \
+	CMD nc -z 127.0.0.1 4532 && grep -q "Ready to accept KISS TCP" /tmp/direwolf-startup.log && pidof direwolf > /dev/null || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]

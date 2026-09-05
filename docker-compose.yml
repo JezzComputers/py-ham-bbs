@@ -14,19 +14,15 @@ services:
       - "4532:4532"  # rigctld
     devices:
       - "/dev/snd:/dev/snd"
-      # - "/dev/ttyACM0:/dev/ttyACM0"
-    ipc: host  # TMP
+      - "${RADIO_DEVICE}:${RADIO_DEVICE}"
     group_add:
-      - 995  # TMP
-      - audio
-      - dialout
-      - uucp
+      - "${AUDIO_GID}"
+      - "${SERIAL_GID}"
     volumes:
       - ./direwolf.conf:/etc/direwolf/direwolf.conf:ro
-      - /run/user/1000/pulse/native:/tmp/pulseaudio.socket:ro  # TMP
-      - ~/.config/pulse/cookie:/root/.config/pulse/cookie:ro  # TMP
     environment:
-      - PULSE_SERVER=unix:/tmp/pulseaudio.socket  # TMP
+      - RADIO_MODEL
+      - RADIO_DEVICE
 
   backend-py:
     build:
