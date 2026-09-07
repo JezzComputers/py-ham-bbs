@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="UTF-8">
+	<meta name="description" content="Simple web client for packet radio">
+	<meta name="author" content="Jeremy & Luke">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>simple-web-client</title>
+	<link rel="icon" type="image/x-icon" href="images/favicon.svg">
+	<link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+	<main class="app">
+		<div class="info-pane">
+			<strong class="info-heading">School destination callsigns</strong>
+			VK3XYZ-0 (Whittlesea Tech School); VK3ABC-0 (School 1); ...
+		</div>
+
+		<div class="row">
+			<label>
+				Student ID / Callsign
+				<input id="student-id" type="text" placeholder="Enter student-id or callsign (SSID optional)"
+					value="VK3XYZ" autocomplete="off">
+			</label>
+
+			<label>
+				Destination Callsign
+				<input id="destination-callsign" type="text" placeholder="Enter destination callsign (SSID optional)"
+					value="VK3ABC" autocomplete="off">
+			</label>
+
+			<div class="verify-group">
+				<button id="verify-button" type="button">Verify</button>
+				<span id="verify-status" class="verify-status" role="img" aria-live="polite"
+					aria-label="Route not verified." data-state="idle">—</span>
+			</div>
+		</div>
+
+		<label>
+			Outbound message
+			<input id="outbound-message" type="text" placeholder="Enter message to transmit" autocomplete="off">
+		</label>
+
+		<label>
+			Packet log
+			<textarea id="packet-log" readonly></textarea>
+		</label>
+	</main>
+
+	<script type="module" src="src/main.ts"></script>
+</body>
+
+</html>

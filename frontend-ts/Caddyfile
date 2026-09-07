@@ -1,0 +1,17 @@
+:8080 {
+	root * ./dist
+	encode zstd gzip
+	file_server
+
+	reverse_proxy /ws backend-py:8765
+
+	@html {
+		path *.html
+	}
+	header @html Cache-Control "no-cache"
+
+	@assets {
+		path *.css *.js *.svg
+	}
+	header @assets Cache-Control "public, max-age=31536000, immutable"
+}

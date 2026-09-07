@@ -1,0 +1,21 @@
+# Python cache & build artifacts
+**/__pycache__/
+**/*.py[cod]
+**/*$py.class
+**/.ruff_cache/
+**/.pytest_cache/
+**/.mypy_cache/
+
+# Local environments
+**/.venv/
+**/venv/
+**/ENV/
+
+# Version control & OS metadata
+.git/
+.gitignore
+.DS_Store
+
+# Node / TypeScript artifacts (since you have web-server-ts)
+**/node_modules/
+**/dist/

@@ -48,6 +48,7 @@ def _color_for(category: type[Warning]) -> str:
 		A string containing an ANSI escape sequence representing the colour
 		for the provided warning category.
 	"""
+
 	try:
 		if issubclass(category, UserWarning):
 			return BRIGHT_YELLOW
@@ -92,6 +93,7 @@ def colored_formatwarning(
 	Returns:
 		The coloured formatted warning string.
 	"""
+
 	color = _color_for(category)
 	formatted = original_formatwarning(message, category, filename, lineno, line)
 	return color + formatted + RESET
@@ -103,6 +105,7 @@ def use_color() -> None:
 	After calling this function, calls to :func:`warnings.warn` will use the
 	coloured formatter defined in :func:`colored_formatwarning`.
 	"""
+
 	if not TYPE_CHECKING:
 		warnings.formatwarning = colored_formatwarning
 

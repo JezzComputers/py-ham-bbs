@@ -7,11 +7,18 @@ version = "0.1.0"
 description = "Python based BBS"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = ["websockets", "uuid6; python_version < '3.14'"]
+dependencies = [
+    "websockets",
+    "uuid6; python_version < '3.14'",
+]
 
 # Install with uv sync --upgrade --all-groups
 [dependency-groups]
 dev = ["pyright", "ty", "pytest", "ruff"]
+
+# Install with uv sync --upgrade --extra=uuid
+[project.optional-dependencies]
+uuid = ["uuid6"]
 
 [tool.pytest.ini_options]
 minversion = "9.0"
@@ -50,24 +57,26 @@ line-length = 320
 [tool.ruff.lint]
 select = ["ALL"]
 ignore = [
-	"D",      # All docstring rules
+	"D",      # all docstring rules
 	"T20",    # print() rules
-	"TC003",  # All std imports without typecheck
+	"TC003",  # all std imports without typecheck
 	"FBT",    # boolean trap rules
 	"PLR",    # magic values, too many returns, etc.
 	"TRY",    # exception message rules
 	"EM",     # exception literal rules
 	"B028",   # warnings stacklevel
-	"I001",   # Import block formating
 	"INP",    # implicit namespace package
 	"S101",   # assert in tests
 	"C90",    # complexity rules
-	"W191",   # Allow tabs for indentation
-	"ERA",    # Allow commented-out code
-	"E501",   # Allow long lines
+	"W191",   # allow tabs for indentation
+	"ERA",    # allow commented-out code
+	"E501",   # allow long lines
 	"COM812", # avoid formatter conflict warnings
-	"TD002",  # Author in TODO
-	"TD003",  # Issue link in TODO
+	"TC006",  # ignore unquoted type expressions in typing.cast() calls
+	"TD002",  # author in TODO
+	"TD003",  # issue link in TODO
+	"RUF023", # allow unsorted dunder methods
+	"CPY001", # don't require copyright notice
 ]
 
 [tool.ruff.format]

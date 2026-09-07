@@ -1,0 +1,59 @@
+services:
+  direwolf-hamlib:
+    build:
+      context: .
+      dockerfile: docker/direwolf-hamlib/Dockerfile
+      args:
+        HAMLIB_VER: "4.7.2"
+    image: direwolf-hamlib:test
+    container_name: direwolf-hamlib
+    restart: unless-stopped
+    user: "${UID}:${GID}"
+    ports:
+      - "8001:8001"  # Direwolf KISS
+      - "4532:4532"  # rigctld
+    devices:
+      - "/dev/snd:/dev/snd"
+      - "${RADIO_DEVICE}:${RADIO_DEVICE}"
+    group_add:
+      - "${AUDIO_GID}"
+      - "${SERIAL_GID}"
+    volumes:
+      - ./direwolf.conf:/etc/direwolf/direwolf.conf:ro
+    environment:
+      - RADIO_MODEL
+      - RADIO_DEVICE
+
+  backend-py:
+    build:
+      context: .
+      dockerfile: backend-py/Dockerfile
+      args:
+        APP_GID: "${GID}"
+    image: backend-py:test
+    container_name: backend-py
+    restart: unless-stopped
+    user: "${UID}:${GID}"
+    ports:
+      - "8765:8765"
+    environment:
+      - DIREWOLF_HOST=direwolf-hamlib
+      - DIREWOLF_PORT=8001
+    volumes:
+      - ./backend-py/py_ham_bbs_protocol.db:/app/py_ham_bbs_protocol.db:rw
+    depends_on:
+      direwolf-hamlib:
+        condition: service_healthy
+
+  frontend-ts:
+    build:
+      context: frontend-ts
+      dockerfile: Dockerfile
+    image: frontend-ts:test
+    container_name: frontend-ts
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      backend-py:
+        condition: service_healthy

@@ -1,6 +1,6 @@
 import pytest
 
-from lib.ax25 import AX25FrameBuilder, AX25FrameConfig, InvalidAX25Error
+from lib.ax25 import AX25FrameBuilder, AX25FrameConfig, InvalidAX25Error, is_valid_callsign
 from lib.kiss import InvalidKISSError, KISSFrameBuilder, KISSFrameConfig
 from lib.terminal import use_color
 
@@ -197,3 +197,15 @@ def test_kiss_round_trip_with_compressed_payload() -> None:
 	assert src == "K9JRR-0"
 	# decode() uses UTF-8 with errors="replace"; ASCII payload should round-trip exactly.
 	assert text == payload.decode("utf-8", "replace")
+
+
+def test_is_valid_callsign_accepts_alnum_up_to_six_chars() -> None:
+	assert is_valid_callsign("VK3XYZ")
+	assert is_valid_callsign("vk3xyz")
+	assert is_valid_callsign("A1")
+
+
+def test_is_valid_callsign_rejects_invalid_formats() -> None:
+	assert not is_valid_callsign("VK3XYZ7")
+	assert not is_valid_callsign("VK3-XY")
+	assert not is_valid_callsign("")

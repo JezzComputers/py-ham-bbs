@@ -1,11 +1,13 @@
 import asyncio
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
-from websockets.asyncio.server import serve, ServerConnection
+
+from websockets.asyncio.server import ServerConnection, serve
 
 
 async def handler(websocket: ServerConnection) -> None:
 	"""Handles a single client connection."""
+
 	while True:
 		now = datetime.now(UTC).isoformat()
 		now_local = datetime.now(ZoneInfo("Australia/Melbourne")).isoformat()

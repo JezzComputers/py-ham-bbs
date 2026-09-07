@@ -1,0 +1,54 @@
+FROM debian:13-slim AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+	git \
+	wget \
+	ca-certificates \
+	build-essential \
+	cmake \
+	libasound2-dev \
+	libudev-dev \
+	libavahi-client-dev \
+	&& rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+
+# Default to 4.7.2 override in docker-compose.yml
+ARG HAMLIB_VER=4.7.2
+RUN wget -q https://github.com/Hamlib/Hamlib/releases/download/${HAMLIB_VER}/hamlib-${HAMLIB_VER}.tar.gz && \
+	tar xf hamlib-${HAMLIB_VER}.tar.gz && \
+	cd hamlib-${HAMLIB_VER} && \
+	./configure --prefix=/opt/radio && \
+	make -j$(nproc) && \
+	make install
+
+RUN git clone --depth=1 -b dev https://github.com/wb2osz/direwolf.git direwolf && \
+	cd direwolf && \
+	mkdir build && cd build && \
+	cmake -DCMAKE_INSTALL_PREFIX=/opt/radio -DCMAKE_PREFIX_PATH=/opt/radio .. && \
+	make -j$(nproc) && \
+	make install
+
+FROM debian:13-slim AS runner
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+	libasound2t64 \
+	libudev1 \
+	libavahi-client3 \
+	netcat-openbsd \
+	gettext-base \
+	&& rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /opt/radio /usr/local
+RUN ldconfig
+
+COPY docker/direwolf-hamlib/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 4532 8001
+
+# HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=5s --timeout=3s --start-period=15s --retries=3 \
+	CMD nc -z 127.0.0.1 4532 && grep -q "Ready to accept KISS TCP" /tmp/direwolf-startup.log && pidof direwolf > /dev/null || exit 1
+
+ENTRYPOINT ["/entrypoint.sh"]

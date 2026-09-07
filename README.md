@@ -6,9 +6,40 @@ Tools and configuration files for building a lightweight ham radio packet BBS ma
 
 ## Documentation
 
-WebSocket Message Protocol can be found [here](https://github.com/jezza5400-org/py-ham-bbs/wiki/08%E2%80%90WebSocket-Message-Protocol).
+WebSocket Message Protocol can be found at the [WebSocket-Message-Protocol wiki](https://github.com/jezza5400-org/py-ham-bbs/wiki/08%E2%80%90WebSocket-Message-Protocol) page.
 
 If possible the radio should be in FM-D (FM Data) mode as audio goes through the DATA path (USB soundcard or ACC connector) which is flat, wide, and unprocessed (what AX.25 wants)
+
+## Implemented Protocol Subset
+
+The current server implementation in `src/server.py` supports a practical subset of the protocol for bidirectional exchange:
+
+- Accepts and validates JSON text frames for `message`, `ack`, `control`, and `error` types.
+- Assigns authoritative server-side `id` (UUIDv7) and `timestamp` (ISO-8601 with timezone) for accepted inbound frames.
+- Verifies each websocket session against the `allowed_students` table in the SQLite database before it accepts routed frames.
+- Validates `source` and `destination` in `CALL-SSID` format and soft-binds `source` to each WebSocket session.
+- Validates `message` payload as KISS hex and verifies it can decode as a KISS-wrapped AX.25 frame.
+- Supports `ack_required` values `0`, `1`, and `2` (unknown numeric values are treated as `0`).
+- Persists idempotency mapping in SQLite (`client_msg_id -> server_id`) so retries can be deduplicated safely.
+- Returns protocol `error` frames on malformed payloads and includes original identifiers when available.
+
+### Runtime Environment
+
+- `PY_HAM_BBS_DB_PATH`: SQLite file path for protocol message/idempotency storage (default: `py_ham_bbs_protocol.db`).
+- `PY_HAM_BBS_SERVER_SOURCE`: Server source station id used for generated ACK/error frames (default: `SERVER-0`).
+- `PY_HAM_BBS_DIREWOLF_ENABLED`: Enable Direwolf KISS forwarding (default: `1`, set to `0`/`false` to disable).
+- `PY_HAM_BBS_DIREWOLF_HOST`: Direwolf KISS host (default: `127.0.0.1`).
+- `PY_HAM_BBS_DIREWOLF_PORT`: Direwolf KISS port (default: `8001`).
+
+### Allowed Students
+
+The SQLite protocol database also contains an `allowed_students` table. Each row maps a student ID callsign to a student name. Bare callsigns are accepted and normalized internally to `CALL-0`.
+
+The web client’s Verify button sends the student ID to `src/server.py`; once the server finds a matching row in `allowed_students`, it marks that websocket session verified and uses the normalized student ID as the source callsign for subsequent frames.
+
+### Server binding and public reachability
+
+Default binding: `0.0.0.0:8765` — the protocol server listens on all network interfaces and is intended to be reachable from clients on your local network. The browser app is meant to connect to this websocket wrapper directly; `server.py` is the public-facing interface for the LAN deployment, while Direwolf remains the local backend.
 
 ## GitHub Actions
 

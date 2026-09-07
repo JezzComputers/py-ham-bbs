@@ -1,0 +1,21 @@
+{
+  "name": "web-client",
+  "version": "0.1.0",
+  "description": "",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "serve": "caddy run --config Caddyfile --adapter caddyfile"
+  },
+  "keywords": [],
+  "author": "Jeremy & Luke",
+  "license": "BSD-3-Clause",
+  "type": "module",
+  "dependencies": {
+    "typescript": "^6.0.3"
+  },
+  "devDependencies": {
+    "vite": "^8.2.2"
+  }
+}

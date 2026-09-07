@@ -1,6 +1,6 @@
 # Byte-compiled / optimized / DLL files / PEP 582
-__pypackages__/
 __pycache__/
+__pypackages__/
 *.py[codz]
 *$py.class
 
@@ -27,6 +27,7 @@ pip-log.txt
 pip-delete-this-directory.txt
 
 # Unit test / coverage reports
+cover/
 htmlcov/
 .tox/
 .nox/
@@ -39,12 +40,13 @@ coverage.xml
 *.py.cover
 .hypothesis/
 .pytest_cache/
-cover/
+.ruff_cache/
 
 # Environments
 .env
 .envrc
-.venv
+.venv/
+.uv/
 env/
 venv/
 ENV/
@@ -54,6 +56,23 @@ venv.bak/
 # Cython debug symbols
 cython_debug/
 
+# Node / Vite / Web Dependencies & Builds
+**/node_modules/
+**/dist/
+web-client-dist/
+
+# Database files
+*.db
+*.db-journal
+*.db-wal
+
+# Generated reports & Docker runtime
+lighthouse-*.html
+.docker/
+
+# Configuration files
+.pypirc
+
 # Visual Studio Code
 .vscode/*
 !.vscode/settings.json
@@ -62,9 +81,3 @@ cython_debug/
 !.vscode/extensions.json
 !.vscode/*.code-snippets
 !*.code-workspace
-
-# Ruff stuff:
-.ruff_cache/
-
-# PyPI configuration file
-.pypirc

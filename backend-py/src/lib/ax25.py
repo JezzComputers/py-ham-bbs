@@ -32,6 +32,16 @@ def decode_call(raw: bytes) -> str:
 
 
 def parse_ax25_addresses(frame: bytes) -> tuple[list[bytes], int]:
+	"""Parse the sequence of AX.25 address fields from a frame.
+
+	Returns a tuple of the list of 7-byte address fields and the index
+	after the final address field.
+
+	Raises:
+		InvalidAX25Error: if the frame ends unexpectedly while parsing
+			address fields (truncated address field).
+	"""
+
 	addresses: list[bytes] = []
 	idx = 0
 	while True:
@@ -51,6 +61,8 @@ class AX25FrameConfig:
 	and source callsigns and SSIDs, and providing their encoded frame
 	representations as bytes.
 	"""
+
+	__slots__ = ("_dest_call", "_dest_ssid", "_src_call", "_src_ssid", "_dest_frame", "_src_frame")
 
 	def __init__(self, dest_call: str, dest_ssid: int, src_call: str, src_ssid: int) -> None:
 		self._dest_call: str = dest_call.upper()
@@ -115,6 +127,8 @@ class AX25FrameBuilder:
 	frames.
 	"""
 
+	__slots__ = ("config", "control", "pid")
+
 	def __init__(self, config: AX25FrameConfig, ax25_control: int = 0x03, ax25_pid: int = 0x01) -> None:
 		self.config: AX25FrameConfig = config
 		self.control: int = ax25_control
@@ -124,11 +138,14 @@ class AX25FrameBuilder:
 		compressed: bytes = zlib.compress(payload, level=9, wbits=15)
 		return self.config.dest_frame + self.config.src_frame + bytes([self.control]) + bytes([self.pid]) + (compressed if len(compressed) < len(payload) else payload)
 
-	def decode_ax25_frame(self, ax25_frame: bytes) -> tuple[str, str, str]:
-		"""
-		Decodes an AX.25 frame from bytes, extracting and returning the
+	@staticmethod
+	def decode_ax25_frame(ax25_frame: bytes) -> tuple[str, str, str]:
+		"""Decodes an AX.25 frame from bytes, extracting and returning the
 		destination callsign, source callsign, and UTF-8 decoded payload text.
-		Raises InvalidAX25Error if the frame is invalid or cannot be parsed.
+
+		Raises:
+			InvalidAX25Error: if the frame is truncated, addresses are invalid or insufficient,
+			or other structural problems occur.
 		"""
 
 		# Minimal AX.25 length: two 7-byte addresses + CONTROL + PID = 16
