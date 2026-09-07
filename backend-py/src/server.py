@@ -1,15 +1,14 @@
-from websockets import Response, Request
-from websockets.datastructures import Headers
-from dataclasses import dataclass
-from datetime import UTC, datetime, tzinfo
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+import asyncio
 import json
 import logging
 import os
-from platform import python_version_tuple
 import re
-from typing import Any, Final, cast, Literal
-import asyncio
+from dataclasses import dataclass
+from datetime import UTC, datetime, tzinfo
+from platform import python_version_tuple
+from typing import Any, Final, Literal, cast
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
@@ -21,7 +20,7 @@ from lib.kiss import InvalidKISSError
 if int(python_version_tuple()[1]) < 14:
 	from uuid6 import uuid7  # pyright: ignore[reportMissingImports, reportUnknownVariableType]
 else:
-	from uuid import uuid7  # ty:ignore[unresolved-import]
+	from uuid import uuid7  # ty:ignore[unresolved-import, unused-ignore-comment]
 
 
 class InvalidFrameError(ValueError):
@@ -190,7 +189,7 @@ def parse_inbound_frame(raw_frame: dict[str, Any]) -> ValidatedInboundFrame:
 			content = payload.get("content")
 			if not isinstance(content, dict):
 				raise InvalidFrameError("verify payload must include content as a JSON object")
-			student_id = content.get("student_id")
+			student_id = cast(str, content.get("student_id"))
 			if not isinstance(student_id, str) or student_id.strip() == "":
 				raise InvalidFrameError("verify payload must include student_id as a non-empty string")
 			if normalize_station_id(student_id) is None:
@@ -540,7 +539,7 @@ class MessageBrokerServer:
 			)
 			return
 
-		student_id_value = content.get("student_id")
+		student_id_value = cast(str, content.get("student_id"))
 		if not isinstance(student_id_value, str) or student_id_value.strip() == "":
 			await self._send_error(
 				websocket=websocket,
@@ -771,24 +770,13 @@ class MessageBrokerServer:
 			logger.info("Client disconnected: %s", websocket.remote_address)
 
 
-# async def health_check(connection: ServerConnection, request: Request) -> Response | None:
-# 	if request.path == "/healthz":
-# 		return Response(200, "OK", Headers(), body=b"ok\n")
-# 	return None
-
-# class HealthcheckFilter(logging.Filter):
-# 	def filter(self, record: logging.LogRecord) -> bool:
-# 		msg = record.getMessage()
-# 		return "/healthz" not in msg
-
-
 async def health_server() -> None:
-	async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+	async def handle(_reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
 		writer.write(b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\nok\n")
 		await writer.drain()
 		writer.close()
 
-	server = await asyncio.start_server(handle, "0.0.0.0", 8080)
+	server = await asyncio.start_server(handle, "0.0.0.0", 8080)  # noqa: S104
 	async with server:
 		await server.serve_forever()
 

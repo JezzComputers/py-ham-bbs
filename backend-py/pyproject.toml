@@ -65,7 +65,6 @@ ignore = [
 	"TRY",    # exception message rules
 	"EM",     # exception literal rules
 	"B028",   # warnings stacklevel
-	"I001",   # import block formatting
 	"INP",    # implicit namespace package
 	"S101",   # assert in tests
 	"C90",    # complexity rules
@@ -76,7 +75,8 @@ ignore = [
 	"TC006",  # ignore unquoted type expressions in typing.cast() calls
 	"TD002",  # author in TODO
 	"TD003",  # issue link in TODO
-	"RUF023", # allow unsorted dunder methods 
+	"RUF023", # allow unsorted dunder methods
+	"CPY001", # don't require copyright notice
 ]
 
 [tool.ruff.format]

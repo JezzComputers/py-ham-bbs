@@ -31,7 +31,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export function formatNowISO8601(): string {
 	const now = new Date();
-	
+
 	// Get local time components
 	const year = now.getFullYear();
 	const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -40,13 +40,13 @@ export function formatNowISO8601(): string {
 	const minutes = String(now.getMinutes()).padStart(2, '0');
 	const seconds = String(now.getSeconds()).padStart(2, '0');
 	const ms = String(now.getMilliseconds()).padStart(3, '0');
-	
+
 	// Calculate timezone offset
 	const offset = -now.getTimezoneOffset();
 	const offsetSign = offset >= 0 ? '+' : '-';
 	const offsetHours = String(Math.trunc(Math.abs(offset) / 60)).padStart(2, '0');
 	const offsetMinutes = String(Math.abs(offset % 60)).padStart(2, '0');
-	
+
 	return `${year}-${month}-${date}T${hours}:${minutes}:${seconds}.${ms}${offsetSign}${offsetHours}:${offsetMinutes}`;
 }
 
@@ -142,6 +142,121 @@ function encodeMessagePayload(text: string, sourceStationId: string, destination
 	return bytesToHex(new Uint8Array(escapedKiss));
 }
 
+function unescapeKiss(bytes: number[]): number[] {
+	const result: number[] = [];
+	for (let i = 0; i < bytes.length; i += 1) {
+		const byte = bytes[i];
+		if (byte === undefined) {
+			continue;
+		}
+		if (byte === FESC) {
+			const next = bytes[i + 1];
+			if (next === TFEND) {
+				result.push(FEND);
+				i += 1;
+				continue;
+			}
+			if (next === TFESC) {
+				result.push(FESC);
+				i += 1;
+				continue;
+			}
+			// Malformed escape - drop the FESC and keep going.
+			continue;
+		}
+		result.push(byte);
+	}
+	return result;
+}
+
+function decodeAddress(bytes: number[], offset: number): { callsign: string; ssid: number; isLast: boolean } | null {
+	if (offset + 7 > bytes.length) {
+		return null;
+	}
+	const chars: string[] = [];
+	for (let i = 0; i < 6; i += 1) {
+		const byte = bytes[offset + i];
+		if (byte === undefined) {
+			return null;
+		}
+		chars.push(String.fromCharCode(byte >> 1));
+	}
+	const callsign = chars.join("").trim();
+	const ssidByte = bytes[offset + 6];
+	if (ssidByte === undefined) {
+		return null;
+	}
+	const ssid = (ssidByte >> 1) & 0x0f;
+	const isLast = (ssidByte & 0x01) === 1;
+	return { callsign, ssid, isLast };
+}
+
+function decodeMessagePayload(hexPayload: string): { text: string; source: string; destination: string } | null {
+	let raw: Uint8Array;
+	try {
+		const clean = hexPayload.trim();
+		if (clean.length % 2 !== 0) {
+			return null;
+		}
+		raw = new Uint8Array(clean.length / 2);
+		for (let i = 0; i < raw.length; i += 1) {
+			raw[i] = Number.parseInt(clean.substr(i * 2, 2), 16);
+		}
+	} catch {
+		return null;
+	}
+
+	const bytes = Array.from(raw);
+	if (bytes.length < 2 || bytes[0] !== FEND || bytes[bytes.length - 1] !== FEND) {
+		return null;
+	}
+
+	// Strip leading FEND + KISS command byte (0x00 = data frame), and trailing FEND.
+	const inner = bytes.slice(2, bytes.length - 1);
+	const ax25 = unescapeKiss(inner);
+
+	// Address field: destination (7 bytes) + source (7 bytes), possibly repeaters (multiples of 7) until isLast.
+	let offset = 0;
+	const destAddr = decodeAddress(ax25, offset);
+	if (destAddr === null) {
+		return null;
+	}
+	offset += 7;
+
+	const srcAddr = decodeAddress(ax25, offset);
+	if (srcAddr === null) {
+		return null;
+	}
+	offset += 7;
+
+	// Skip any repeater addresses until we hit the one marked "last".
+	let lastAddr = srcAddr;
+	while (!lastAddr.isLast) {
+		const repeaterAddr = decodeAddress(ax25, offset);
+		if (repeaterAddr === null) {
+			return null;
+		}
+		lastAddr = repeaterAddr;
+		offset += 7;
+	}
+
+	// Control byte + PID byte follow the address field.
+	if (offset + 2 > ax25.length) {
+		return null;
+	}
+	offset += 2;
+
+	const textBytes = ax25.slice(offset);
+	try {
+		const text = new TextDecoder("utf-8", { fatal: true }).decode(new Uint8Array(textBytes));
+		const destination = `${destAddr.callsign}-${destAddr.ssid}`;
+		const source = `${srcAddr.callsign}-${srcAddr.ssid}`;
+		return { text, source, destination };
+	} catch {
+		return null;
+	}
+}
+
 function summarizePayload(payload: unknown): string {
 	if (typeof payload === "string") {
 		return payload.length > MAX_PAYLOAD_PREVIEW ? `${payload.slice(0, MAX_PAYLOAD_PREVIEW)}...` : payload;
@@ -172,7 +287,16 @@ function formatPacketLog(direction: PacketDirection, packetText: string): string
 		const destination = typeof parsed.destination === "string" ? parsed.destination : "?";
 		const ackRequired = typeof parsed.ack_required === "number" ? String(parsed.ack_required) : "?";
 		const payloadSummary = summarizePayload(parsed.payload);
-		return `${time} ${direction} ${type} ${source} → ${destination} ack=${ackRequired} ${payloadSummary}`;
+
+		let decodedSuffix = "";
+		if (type === "message" && typeof parsed.payload === "string") {
+			const decoded = decodeMessagePayload(parsed.payload);
+			if (decoded !== null) {
+				decodedSuffix = ` "${decoded.text}"`;
+			}
+		}
+
+		return `${time} ${direction} ${type} ${source} → ${destination} ack=${ackRequired} ${payloadSummary}${decodedSuffix}`;
 	} catch {
 		return `${formatNowISO8601()} ${direction} RAW ${packetText}`;
 	}
@@ -343,8 +467,7 @@ export function createSocketClient(url: string, callbacks: SocketCallbacks): Soc
 			|| currentSocket.readyState !== WebSocket.OPEN
 			|| pendingVerification !== null
 			|| assignedSource === null
-		)
-		{
+		) {
 			return;
 		}
 
@@ -563,8 +686,7 @@ export function createSocketClient(url: string, callbacks: SocketCallbacks): Soc
 			|| assignedSource === null
 			|| assignedDestination === null
 			|| boundSource !== assignedSource
-		)
-		{
+		) {
 			pushLog(`${formatNowISO8601()} OUT DROP route-not-verified`);
 			return;
 		}

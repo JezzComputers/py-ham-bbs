@@ -1,18 +1,20 @@
 """Direwolf KISS helpers and stream handling utilities."""
 
-import socket
-from typing import Final
 import os
+import socket
+import time
+from typing import Final
 
 from .ax25 import AX25FrameBuilder, InvalidAX25Error
 from .kiss import FEND, InvalidKISSError, KISSFrameBuilder, KISSFrameConfig
 from .terminal import BLUE, CYAN, GREEN, MAGENTA, RESET
 
-
 DEFAULT_KISS_HOST: Final[str] = os.getenv("DIREWOLF_HOST", "127.0.0.1")
-DEFAULT_KISS_PORT: Final[int] = int(os.getenv("DIREWOFL_PORT", "8001"))
+DEFAULT_KISS_PORT: Final[int] = int(os.getenv("DIREWOLF_PORT", "8001"))
 MIN_KISS_FRAME_LEN: Final[int] = 3
 MIN_KISS_AX25_LEN: Final[int] = 19
+KISS_CONNECT_RETRIES: Final[int] = 3
+KISS_CONNECT_RETRY_DELAY: Final[float] = 0.5  # seconds
 
 
 class KISSStreamDecoder:
@@ -90,9 +92,18 @@ class DirewolfKISSClient:
 
 
 def kiss_connect(host: str = DEFAULT_KISS_HOST, port: int = DEFAULT_KISS_PORT) -> socket.socket:
-	s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-	s.connect((host, port))
-	return s
+	last_exc: OSError | None = None
+	for attempt in range(1, KISS_CONNECT_RETRIES + 1):
+		try:
+			s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+			s.connect((host, port))
+			return s
+		except OSError as exc:
+			last_exc = exc
+			if attempt < KISS_CONNECT_RETRIES:
+				time.sleep(KISS_CONNECT_RETRY_DELAY)
+	assert last_exc is not None
+	raise last_exc
 
 
 def validate_kiss_payload(payload: bytes) -> bytes:

@@ -1,7 +1,8 @@
 import asyncio
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
-from websockets.asyncio.server import serve, ServerConnection
+
+from websockets.asyncio.server import ServerConnection, serve
 
 
 async def handler(websocket: ServerConnection) -> None:

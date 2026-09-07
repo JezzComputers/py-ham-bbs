@@ -5,13 +5,12 @@ from typing import cast
 
 import pytest
 from websockets.asyncio.client import ClientConnection, connect
-from websockets.asyncio.server import serve
-from websockets.asyncio.server import ServerConnection
+from websockets.asyncio.server import ServerConnection, serve
 
 import server
 from lib.ax25 import AX25FrameBuilder, AX25FrameConfig
 from lib.kiss import KISSFrameBuilder, KISSFrameConfig
-from server import MessageRepository, MessageBrokerServer, parse_inbound_frame, InvalidFrameError
+from server import InvalidFrameError, MessageBrokerServer, MessageRepository, parse_inbound_frame
 
 SERVER_SOURCE = "SERVER-0"
 SENDER_STUDENT_ID = "VK3XYZ-0"
